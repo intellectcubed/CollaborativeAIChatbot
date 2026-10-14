@@ -25,21 +25,20 @@ Real 911 call details (patient names, addresses, ages, medical conditions) must 
 
 - [Collaborative domain description](docs/collaborative_domain.md): how the squads, territories, shifts, Tango and the calendar work
 - [Scoping and design](docs/ideation/Scoping.md): problem, architecture, success metrics, risks
-- [Retrieving the GroupMe history](docs/retrieve_groupme_history.md)
 - [Extracting schedule examples](docs/extract_schedule_examples.md)
 
 ## Repository layout
 
 ```
 docs/          domain description, design, script docs
-scripts/       data-gathering utilities (GroupMe export, example extraction)
+scripts/       example extraction (redact, filter, classify chat messages)
 test_cases/    labeled example messages for evaluating the classifier
 data/          local only, git-ignored: chat history and derived files
 ```
 
 ## Status
 
-Early design. The domain is documented, the GroupMe history can be downloaded, and a set of real example messages is being collected and labeled. The bot itself is not built yet.
+Early design. The domain is documented, a script extracts candidate messages from a GroupMe export, and a set of real example messages is being collected and labeled. The bot itself is not built yet.
 
 ## Setup (scripts)
 
@@ -49,4 +48,4 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The scripts need a `GROUPME_TOKEN` (to download history) and an `ANTHROPIC_API_KEY` (to classify redacted examples). See the script docs above.
+The example-extraction script reads a GroupMe history export (JSON Lines) and needs an `ANTHROPIC_API_KEY` to classify the redacted messages. See [docs/extract_schedule_examples.md](docs/extract_schedule_examples.md).
