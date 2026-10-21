@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replay tool</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 22rem 1fr; height: 100vh; }
+  aside { border-right: 1px solid #ccc; padding: 1rem; overflow: auto; }
+  main { padding: 1rem; overflow: auto; }
+  label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
+  select, input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem; }
+  button { margin-top: .8rem; cursor: pointer; }
+  ul { list-style: none; padding: 0; margin: 1rem 0 0; }
+  li { padding: .4rem; border-bottom: 1px solid #eee; cursor: pointer; }
+  li:hover, li.sel { background: #eef; }
+  .status { color: #555; font-size: 12px; }
+  pre { background: #f6f6f6; padding: .6rem; overflow: auto; }
+  .step { border: 1px solid #ddd; border-radius: 6px; margin: .6rem 0; padding: .5rem; }
+  .err { color: #b00; }
+</style>
+</head>
+<body>
+<aside>
+  <h3>Post a message</h3>
+  <label for="sender">From</label><select id="sender"></select>
+  <label for="when">Sent at (New York time)</label><input id="when" type="datetime-local">
+  <label for="text">Message</label><textarea id="text" rows="4"></textarea>
+  <button id="send">Send to message processor</button>
+  <div id="result" class="status"></div>
+  <h3>Traces</h3>
+  <ul id="traces"></ul>
+</aside>
+<main><h3>Trace</h3><div id="detail">Select a trace.</div></main>
+<script>
+const $ = id => document.getElementById(id);
+let selected = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(path + " " + r.status);
+  return r.json();
+}
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c])); }
+
+async function loadMembers() {
+  const members = await api("/api/members");
+  $("sender").innerHTML = members.map(m => `<option value="${esc(m.sender_id)}">${esc(m.name)} · ${esc(m.member)} · squad ${esc(m.squad)}</option>`).join("");
+}
+async function loadTraces() {
+  const traces = await api("/api/traces");
+  $("traces").innerHTML = traces.map(t =>
+    `<li data-id="${esc(t.trace_id)}" class="${t.trace_id === selected ? "sel" : ""}">${esc(t.sent_at || "")}<br><span class="status">${esc(t.status)} · ${esc(t.source)}</span></li>`).join("");
+  document.querySelectorAll("#traces li").forEach(li => li.onclick = () => { selected = li.dataset.id; loadTraces(); loadDetail(); });
+}
+async function loadDetail() {
+  if (!selected) return;
+  const t = await api("/api/traces/" + encodeURIComponent(selected));
+  $("detail").innerHTML = `<div class="status">${esc(t.trace_id)} · ${esc(t.status)} · sent ${esc(t.sent_at)}</div>` +
+    t.steps.map(s => `<div class="step"><b>${s.seq}. ${esc(s.name)}</b> <span class="status">${s.duration_ms} ms</span>` +
+      (s.error ? ` <span class="err">error: ${esc(s.error)}</span>` : "") +
+      (s.input ? `<pre>input: ${esc(JSON.stringify(s.input, null, 2))}</pre>` : "") +
+      (s.output ? `<pre>output: ${esc(JSON.stringify(s.output, null, 2))}</pre>` : "") + `</div>`).join("");
+}
+$("send").onclick = async () => {
+  if ($("send").disabled) return;  // one click, one message
+  $("send").disabled = true;
+  const body = { sender_id: $("sender").value, text: $("text").value };
+  if ($("when").value) body.sent_at = $("when").value;
+  try {
+    const r = await api("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    $("result").textContent = "processor: " + r.status;
+    selected = r.trace_id; $("text").value = "";
+    loadTraces(); loadDetail();
+  } catch (e) { $("result").textContent = "failed: " + e.message; }
+  finally { $("send").disabled = false; }
+};
+loadMembers(); loadTraces();
+setInterval(() => { loadTraces(); loadDetail(); }, 2000);
+</script>
+</body>
+</html>

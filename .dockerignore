@@ -1,0 +1,8 @@
+.git
+.venv
+data
+test_cases
+docs
+config/roster.local.json
+**/__pycache__
+*.db*
