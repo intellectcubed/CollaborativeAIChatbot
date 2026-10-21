@@ -235,3 +235,10 @@ data/
 
 # macOS
 .DS_Store
+
+# Local roster (real sender ids and names), trace databases
+config/roster.local.json
+config/roster.local.csv
+*.db
+*.db-wal
+*.db-shm

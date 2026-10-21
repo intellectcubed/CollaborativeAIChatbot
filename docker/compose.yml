@@ -1,0 +1,56 @@
+# Local MVP stack. Run from the repo root:  docker compose -f docker/compose.yml up --build
+x-app: &app
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  environment: &env
+    TRACE_DB_PATH: /data/trace.db
+    QUEUE_URL: http://queue:9324/000000000000/chatbot-events
+    SQS_ENDPOINT_URL: http://queue:9324
+    AWS_ACCESS_KEY_ID: local
+    AWS_SECRET_ACCESS_KEY: local
+    AWS_DEFAULT_REGION: us-east-1
+    ROSTER_PATH: /roster/roster.csv
+    INGEST_URL: http://ingest:8000
+  volumes:
+    - trace-data:/data
+    - ../config/roster.local.csv:/roster/roster.csv:ro
+
+services:
+  queue:
+    image: softwaremill/elasticmq-native:1.6.11
+    ports:
+      - "9324:9324"
+      - "9325:9325"  # ElasticMQ web UI: queue depths, in-flight and dead-letter counts
+    volumes:
+      - ../config/elasticmq.conf:/opt/elasticmq.conf:ro
+
+  ingest:
+    <<: *app
+    command: uvicorn chatbot.ingest.app:create_app --factory --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on: [queue]
+
+  agent:
+    <<: *app
+    # Only the agent gets the API key. Put it in .env at the repo root (git-ignored); see .env.example.
+    env_file:
+      - path: ../.env
+        required: false
+    volumes:
+      - trace-data:/data
+      - ../config/roster.local.csv:/roster/roster.csv:ro
+      - ../prompts:/app/prompts:ro  # edit prompts/ and the next message uses the change
+    command: python -m chatbot.agent
+    depends_on: [queue]
+
+  replay:
+    <<: *app
+    command: uvicorn chatbot.replay.app:create_app --factory --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    depends_on: [ingest]
+
+volumes:
+  trace-data:

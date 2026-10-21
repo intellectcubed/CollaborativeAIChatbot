@@ -25,6 +25,8 @@ Real 911 call details (patient names, addresses, ages, medical conditions) must 
 
 - [Collaborative domain description](docs/collaborative_domain.md): how the squads, territories, shifts, Tango and the calendar work
 - [Scoping and design](docs/ideation/Scoping.md): problem, architecture, success metrics, risks
+- [Local MVP design](docs/design/local_mvp.md): webhook, queue, agent, replay tool and trace store
+- [Implementation plan](docs/design/implementation_plan.md): phased build order for the local MVP
 - [Extracting schedule examples](docs/extract_schedule_examples.md)
 
 ## Repository layout

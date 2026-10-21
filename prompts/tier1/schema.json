@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "is_scheduling": {
+      "type": "boolean"
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "NoCrew",
+              "AddCrew",
+              "GetShift",
+              "Clarify"
+            ]
+          },
+          "squads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "date": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "squads",
+          "date",
+          "start",
+          "end",
+          "question"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reasoning": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "is_scheduling",
+    "confidence",
+    "commands",
+    "reasoning"
+  ],
+  "additionalProperties": false
+}
