@@ -1,0 +1,6 @@
+{
+  "members": [
+    {"sender_id": "1000001", "member": "Member-1", "squad": "34", "names": ["Alex Example"]},
+    {"sender_id": "1000002", "member": "Member-2", "squad": "54", "names": ["Sam Sample"]}
+  ]
+}

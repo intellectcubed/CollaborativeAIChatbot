@@ -218,3 +218,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Project-specific ---
+
+# Real chat history and anything derived from it (may contain 911-call details)
+data/
+
+# Secrets
+*.key
+
+# Terraform (state files can contain secrets)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# macOS
+.DS_Store
+
+# Local roster (real sender ids and names), trace databases
+config/roster.local.json
+config/roster.local.csv
+*.db
+*.db-wal
+*.db-shm
