@@ -8,11 +8,13 @@ message, so an edit takes effect on the next message with no restart.
 | `tier1/system.md` | System prompt for the Tier 1 interpretation call |
 | `tier1/user.md` | Template for the per-message user turn. Fields: `{message_time}`, `{sender}`, `{message}` |
 | `tier1/schema.json` | JSON schema the response must follow (structured output) |
+| `intent/system.md`, `intent/user.md`, `intent/schema.json` | The intent check: does this look like a request to modify the schedule? A confident "no" skips Tier 1 |
 
 The trace records the exact text sent and a short hash of these three files as the prompt version.
 
 Rules:
 - Never put raw chat text, names, or anything from a real 911 call in a prompt or example. Prompts are
   committed to git and are the one thing the self-healing agent is allowed to change (by pull request).
-- If you change `schema.json`, update `Command` and `Interpretation` in `src/chatbot/agent/interpret.py`
+- If you change a `schema.json`, update the matching models (`Command` and `Interpretation` in
+  `src/chatbot/agent/interpret.py`, `IntentResult` in `src/chatbot/agent/intent.py`)
   to match. The code validates every response against its own models.

@@ -16,4 +16,7 @@ Rules:
 - If the message is not about the schedule, set is_scheduling to false and return no commands.
 - Use an empty string for any field that does not apply, and an empty list for squads that do not apply.
 - confidence is your confidence (0 to 1) that the commands are exactly right and safe to apply.
+- The date is always the day the shift STARTS. Times after midnight stay with that shift: "Monday night 0200 to 0300" is date Monday, start 0200, end 0300, not Tuesday.
+- A message sent between 0000 and 0600 that says "tonight" means the shift already in progress, which started the previous calendar day.
+- When the message names a whole shift but no hours, give that shift's full hours: 1800 to 0600 for a night shift, 0600 to 1800 for a weekend day shift. Use the exact hours people give; do not round them. Leave start and end empty only when you cannot tell which shift is meant.
 - reasoning is one or two sentences.

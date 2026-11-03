@@ -1,0 +1,17 @@
+# How the agent treats the calendar. Re-read for every message.
+# Safety settings: the self-healing agent must not change this file.
+
+# dry_run: validate and ask the calendar service to PREVIEW each change; nothing is written.
+# live:    make the changes. Also needs the environment variable CALENDAR_ALLOW_WRITES=1 on the agent,
+#          so editing this file alone can never switch writes on.
+mode = "dry_run"
+
+# Confidence of the interpretation (0 to 1):
+#   at or above apply_min_confidence : go ahead
+#   from ask_min_confidence up to it : ask the sender to confirm first
+#   below ask_min_confidence         : flag for the admin
+apply_min_confidence = 0.9
+ask_min_confidence = 0.5
+
+# May a member change another squad's shifts? false: only the sender's own squad.
+allow_cross_squad_edits = false

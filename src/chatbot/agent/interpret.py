@@ -4,35 +4,15 @@ The commands are plain data for now. They are rendered as text ("Call NoCrew on 
 later they become calendar service calls.
 """
 
-import hashlib
 import json
-from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
-from chatbot.config import GROUP_TZ, PROMPTS_DIR
+from chatbot.config import GROUP_TZ
 from chatbot.models import Event, RedactedText
-
-@dataclass(frozen=True)
-class Prompt:
-    system: str
-    user_template: str
-    schema: dict
-    version: str  # short hash of the three files, recorded in the trace
-
-
-def load_prompt(name: str = "tier1", directory: Path | None = None) -> Prompt:
-    """Read the prompt files fresh, so edits apply to the next message without a restart."""
-    d = (directory or PROMPTS_DIR) / name
-    system = (d / "system.md").read_text(encoding="utf-8").strip()
-    user_template = (d / "user.md").read_text(encoding="utf-8").rstrip("\n")
-    schema_text = (d / "schema.json").read_text(encoding="utf-8")
-    digest = hashlib.sha256("\0".join((system, user_template, schema_text)).encode()).hexdigest()[:8]
-    return Prompt(system, user_template, json.loads(schema_text), digest)
-
+from chatbot.prompts import Prompt, load_prompt  # noqa: F401  (re-exported for callers and tests)
 
 class Command(BaseModel):
     action: Literal["NoCrew", "AddCrew", "GetShift", "Clarify"]

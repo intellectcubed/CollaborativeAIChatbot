@@ -42,8 +42,18 @@ services:
       - trace-data:/data
       - ../config/roster.local.csv:/roster/roster.csv:ro
       - ../prompts:/app/prompts:ro  # edit prompts/ and the next message uses the change
+      - ../config:/app/config:ro  # policy.toml is re-read for every message
     command: python -m chatbot.agent
     depends_on: [queue]
+
+  # A stand-in for the calendar service. Start it with:  docker compose -f docker/compose.yml --profile fake-calendar up -d
+  # then set CALENDAR_BASE_URL=http://calendar:8080 in .env. Never needed once you point at the mirror.
+  calendar:
+    <<: *app
+    profiles: ["fake-calendar"]
+    command: python -m chatbot.schedule.fake_server --port 8080
+    ports:
+      - "8080:8080"
 
   replay:
     <<: *app

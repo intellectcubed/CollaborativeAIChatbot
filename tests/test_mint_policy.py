@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-ALLOWED = {"models.py", "pii/filter.py", "agent/worker.py", "agent/interpret.py"}  # models: queue JSON read-back; worker: replies the agent composes itself
+# models: queue JSON read-back; interpret and the stages: text the agent composes from redacted input;
+# traced_llm: records prompts that were built from redacted input
+ALLOWED = {"models.py", "pii/filter.py", "agent/interpret.py", "agent/plan.py", "interfaces/traced_llm.py"}  # and agent/stages/
 SRC = Path(__file__).resolve().parents[1] / "src" / "chatbot"
 
 
@@ -10,6 +12,8 @@ def test_mint_is_confined():
     offenders = [
         str(p.relative_to(SRC))
         for p in SRC.rglob("*.py")
-        if "RedactedText.mint(" in p.read_text() and str(p.relative_to(SRC)) not in ALLOWED
+        if "RedactedText.mint(" in p.read_text()
+        and str(p.relative_to(SRC)) not in ALLOWED
+        and not str(p.relative_to(SRC)).startswith("agent/stages/")
     ]
     assert offenders == []

@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "is_schedule_change": {"type": "boolean"},
+    "confidence": {"type": "number"},
+    "reason": {"type": "string"}
+  },
+  "required": ["is_schedule_change", "confidence", "reason"],
+  "additionalProperties": false
+}
