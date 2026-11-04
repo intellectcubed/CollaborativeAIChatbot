@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replies</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; padding: 1rem; max-width: 40rem; }
+  .msg { background: #eef; border-radius: 10px; padding: .5rem .8rem; margin: .6rem 0; }
+  .meta { color: #555; font-size: 12px; }
+  .text { white-space: pre-wrap; margin-top: .2rem; }
+</style>
+</head>
+<body>
+<h3>Replies from the bot</h3>
+<div id="list">Nothing yet.</div>
+<script>
+let members = [];
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c])); }
+async function load() {
+  if (!members.length) members = await (await fetch("/api/members")).json();
+  const rows = await (await fetch("/api/outbox")).json();
+  if (!rows.length) return;
+  document.getElementById("list").innerHTML = rows.map(r => {
+    const who = members.find(m => m.member === r.to_member);
+    return `<div class="msg"><div class="meta">${esc(r.created_at.slice(0, 19).replace("T", " "))} UTC · ${esc(r.kind)} · to ${who ? esc(who.name) + " · " : ""}${esc(r.to_member || "unknown")} · ${esc(r.channel || "-")} · ${esc(r.status)}</div><div class="text">${esc(r.text)}</div></div>`;
+  }).join("");
+}
+load(); setInterval(load, 2000);
+</script>
+</body>
+</html>

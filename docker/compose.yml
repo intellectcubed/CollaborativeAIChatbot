@@ -43,6 +43,10 @@ services:
       - ../config/roster.local.csv:/roster/roster.csv:ro
       - ../prompts:/app/prompts:ro  # edit prompts/ and the next message uses the change
       - ../config:/app/config:ro  # policy.toml is re-read for every message
+    environment:
+      <<: *env
+      PROMPT_LAB: "1"  # lets the replay tool try edited prompts through this container; remove to switch off
+    expose: ["8002"]   # internal only: not published to the host
     command: python -m chatbot.agent
     depends_on: [queue]
 
@@ -57,6 +61,16 @@ services:
 
   replay:
     <<: *app
+    environment:
+      <<: *env
+      AGENT_URL: http://agent:8002
+      TEST_CASES_PATH: /app/test_cases/labeled_examples.csv
+    volumes:
+      - trace-data:/data
+      - ../config/roster.local.csv:/roster/roster.csv:ro
+      - ../config:/app/config:ro  # shows the live policy mode
+      - ../prompts:/app/prompts  # writable: the prompt editor saves here
+      - ../test_cases:/app/test_cases:ro  # labeled examples for scoring a prompt
     command: uvicorn chatbot.replay.app:create_app --factory --host 0.0.0.0 --port 8001
     ports:
       - "8001:8001"

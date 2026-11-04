@@ -5,7 +5,7 @@ later they become calendar service calls.
 """
 
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
@@ -50,12 +50,15 @@ class Interpretation(BaseModel):
     reasoning: str
 
 
+def render_user(template: str, member: str | None, squad: str | None, sent_at: datetime, text: str) -> str:
+    """Fill a user template: when it was sent, who sent it (roster pseudonym and squad), and the text."""
+    sent = sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
+    who = f"{member} (squad {squad})" if member else "unknown sender"
+    return template.format(message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=text)
+
+
 def build_user_message(event: Event, prompt: Prompt) -> RedactedText:
-    """The user message: when it was sent, who sent it (roster pseudonym and squad), and the redacted text."""
-    sent = event.sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
-    who = f"{event.member} (squad {event.squad})" if event.member else "unknown sender"
-    return RedactedText.mint(prompt.user_template.format(
-        message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=event.text))
+    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text))
 
 
 def parse(text: str) -> Interpretation:
