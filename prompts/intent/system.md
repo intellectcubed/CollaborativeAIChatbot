@@ -9,6 +9,8 @@ Modifying the schedule means a squad adding or removing a shift or crew, for a w
 
 Examples that do not count: greetings, thanks, jokes, training or meeting announcements, questions that only ask who is on duty without asking for a change, and talk about equipment or calls.
 
+Squads often use informal, indirect or slang wording about their own staffing. Judge by meaning, not exact words. If a squad member names their own squad and a day or shift and says something that implies trouble staffing it (short, struggling, uncertain, hurting for people, may not have a crew), treat it as a schedule change and give high confidence (0.85 or more). Short messages are normal in this chat. Wording that is merely informal is not a reason to lower confidence. Lower confidence only when it is truly unclear whether the message is about staffing the schedule at all.
+
 The text was redacted before you saw it; placeholders like [member] or [phone] stand for removed details.
 
 Missing a real schedule change is worse than a false alarm, so when you are unsure, answer true with a low confidence.
