@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from chatbot.agent.interpret import Interpretation
 from chatbot.agent.intent import IntentResult
 from chatbot.agent.plan import PlannedAction
+from chatbot.channels import Channels
 from chatbot.interfaces.llm import is_transient as _llm_transient
 from chatbot.interfaces.traced_llm import BoundLlm
 from chatbot.models import Event
@@ -57,6 +58,7 @@ class Context:
     policy: Policy = field(default_factory=Policy)
     plan: list[PlannedAction] = field(default_factory=list)
     decision: str | None = None  # from the gate: apply | confirm | flag
+    channels: Channels | None = None  # where replies go; None: nothing is sent
     outcome: str | None = None
 
 

@@ -4,7 +4,8 @@
 # dry_run: validate and ask the calendar service to PREVIEW each change; nothing is written.
 # live:    make the changes. Also needs the environment variable CALENDAR_ALLOW_WRITES=1 on the agent,
 #          so editing this file alone can never switch writes on.
-mode = "dry_run"
+# mode = "dry_run"
+mode = "live"
 
 # Confidence of the interpretation (0 to 1):
 #   at or above apply_min_confidence : go ahead
@@ -15,3 +16,6 @@ ask_min_confidence = 0.5
 
 # May a member change another squad's shifts? false: only the sender's own squad.
 allow_cross_squad_edits = false
+
+# Tell the sender what was done ("Called NoCrew squad 54 ...")? Questions and refusals are always sent.
+announce_results = false

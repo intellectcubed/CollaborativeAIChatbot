@@ -40,6 +40,19 @@ CREATE TABLE IF NOT EXISTS steps (
     error       TEXT,
     PRIMARY KEY (trace_id, seq)
 );
+CREATE TABLE IF NOT EXISTS outbox (
+    trace_id   TEXT NOT NULL REFERENCES traces(trace_id),
+    seq        INTEGER NOT NULL,
+    kind       TEXT NOT NULL,
+    to_member  TEXT,
+    text       TEXT NOT NULL,
+    channel    TEXT,
+    status     TEXT NOT NULL,
+    error      TEXT,
+    created_at TEXT NOT NULL,
+    sent_at    TEXT,
+    PRIMARY KEY (trace_id, seq)
+);
 """
 
 
@@ -154,6 +167,36 @@ class TraceStore:
                     error,
                 ),
             )
+
+    # ---- outbox: every reply the agent makes, whichever channel delivers it
+
+    def outbox_begin(self, trace_id, seq, kind, to_member, text) -> bool:
+        """Record a reply as pending. Returns False if it was already sent or skipped (a redelivered message)."""
+        for v in (trace_id, kind, to_member, text):
+            check_payload(v)
+        with self._conn(write=True) as c:
+            row = c.execute("SELECT status FROM outbox WHERE trace_id=? AND seq=?", (trace_id, seq)).fetchone()
+            if row is not None:
+                return row["status"] in ("pending", "failed")
+            c.execute("INSERT INTO outbox(trace_id, seq, kind, to_member, text, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (trace_id, seq, kind, to_member, str(text), "pending", _now()))
+            return True
+
+    def outbox_finish(self, trace_id, seq, channel, status, error=""):
+        check_payload(channel)
+        check_payload(status)
+        with self._conn(write=True) as c:
+            c.execute("UPDATE outbox SET channel=?, status=?, error=?, sent_at=? WHERE trace_id=? AND seq=?",
+                      (channel, status, error or None, _now() if status == "sent" else None, trace_id, seq))
+
+    def get_outbox(self, trace_id):
+        with self._conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM outbox WHERE trace_id=? ORDER BY seq", (trace_id,))]
+
+    def list_outbox(self, limit=50):
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM outbox ORDER BY created_at DESC, seq LIMIT ?", (limit,))]
 
     # ---- reads
 

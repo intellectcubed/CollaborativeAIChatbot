@@ -10,6 +10,7 @@ import os
 
 from chatbot.agent.pipeline import AgentConfig, Context, run_pipeline
 from chatbot.agent.stages import default_stages
+from chatbot.channels import Channels, load_channels
 from chatbot.interfaces.llm import LlmClient
 from chatbot.interfaces.traced_llm import TracedLlm
 from chatbot.models import Event
@@ -25,14 +26,15 @@ INTENT_SKIP_CONFIDENCE = float(os.environ.get("INTENT_SKIP_CONFIDENCE", "0.8"))
 
 def handle(event: Event, store: TraceStore, llm: LlmClient, model: str = DEFAULT_MODEL,
            intent_model: str | None = None, intent_skip_confidence: float = INTENT_SKIP_CONFIDENCE,
-           calendar: Calendar | None = None, policy: Policy | None = None) -> None:
+           calendar: Calendar | None = None, policy: Policy | None = None,
+           channels: Channels | None = None) -> None:
     """Run one event through the stages. Raises only for a transient failure, so the queue retries it.
 
-    Without a calendar the calendar stages are skipped. The policy is read fresh for each message.
+    Without a calendar the calendar stages are skipped. The policy and channel routes are read fresh for each message.
     """
     config = AgentConfig(model=model, intent_model=intent_model, intent_skip_confidence=intent_skip_confidence)
     ctx = Context(event, store, TracedLlm(llm, store).bind(event.trace_id), config,
-                  calendar=calendar, policy=policy or load_policy())
+                  calendar=calendar, policy=policy or load_policy(), channels=channels or load_channels())
     run_pipeline(default_stages(), ctx)
 
 

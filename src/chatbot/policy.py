@@ -22,6 +22,7 @@ class Policy:
     apply_min_confidence: float = 0.9
     ask_min_confidence: float = 0.5
     allow_cross_squad_edits: bool = False
+    announce_results: bool = False  # also tell the sender what was done; questions are always sent
 
     @property
     def live(self) -> bool:
@@ -48,7 +49,10 @@ def load_policy(path: Path | None = None) -> Policy:
             apply_min_confidence=float(data.get("apply_min_confidence", 0.9)),
             ask_min_confidence=float(data.get("ask_min_confidence", 0.5)),
             allow_cross_squad_edits=bool(data.get("allow_cross_squad_edits", False)),
+            announce_results=data.get("announce_results", False),
         )
+        if not isinstance(policy.announce_results, bool):
+            raise ValueError("announce_results must be true or false")
         if policy.mode not in MODES or not 0 <= policy.ask_min_confidence <= policy.apply_min_confidence <= 1:
             raise ValueError("invalid policy values")
         return policy
