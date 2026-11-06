@@ -4,34 +4,18 @@ The commands are plain data for now. They are rendered as text ("Call NoCrew on 
 later they become calendar service calls.
 """
 
-import hashlib
 import json
-from dataclasses import dataclass
-from datetime import date
-from pathlib import Path
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
-from chatbot.config import GROUP_TZ, PROMPTS_DIR
+from chatbot.agent.schedule_info import NO_SCHEDULE
+from chatbot.config import GROUP_TZ
 from chatbot.models import Event, RedactedText
+from chatbot.prompts import Prompt, load_prompt  # noqa: F401  (re-exported for callers and tests)
 
-@dataclass(frozen=True)
-class Prompt:
-    system: str
-    user_template: str
-    schema: dict
-    version: str  # short hash of the three files, recorded in the trace
-
-
-def load_prompt(name: str = "tier1", directory: Path | None = None) -> Prompt:
-    """Read the prompt files fresh, so edits apply to the next message without a restart."""
-    d = (directory or PROMPTS_DIR) / name
-    system = (d / "system.md").read_text(encoding="utf-8").strip()
-    user_template = (d / "user.md").read_text(encoding="utf-8").rstrip("\n")
-    schema_text = (d / "schema.json").read_text(encoding="utf-8")
-    digest = hashlib.sha256("\0".join((system, user_template, schema_text)).encode()).hexdigest()[:8]
-    return Prompt(system, user_template, json.loads(schema_text), digest)
+NO_DATES = "not extracted"  # what the Tier 1 message says when the intent step did not report dates
 
 
 class Command(BaseModel):
@@ -70,12 +54,17 @@ class Interpretation(BaseModel):
     reasoning: str
 
 
-def build_user_message(event: Event, prompt: Prompt) -> RedactedText:
-    """The user message: when it was sent, who sent it (roster pseudonym and squad), and the redacted text."""
-    sent = event.sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
-    who = f"{event.member} (squad {event.squad})" if event.member else "unknown sender"
-    return RedactedText.mint(prompt.user_template.format(
-        message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=event.text))
+def render_user(template: str, member: str | None, squad: str | None, sent_at: datetime, text: str,
+                dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> str:
+    """Fill a user template: when it was sent, who sent it (roster pseudonym and squad), and the text."""
+    sent = sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
+    who = f"{member} (squad {squad})" if member else "unknown sender"
+    return template.format(message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=text,
+                           dates=dates, schedule=schedule)
+
+
+def build_user_message(event: Event, prompt: Prompt, dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> RedactedText:
+    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text, dates, schedule))
 
 
 def parse(text: str) -> Interpretation:
