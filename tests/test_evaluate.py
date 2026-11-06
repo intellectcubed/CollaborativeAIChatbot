@@ -139,3 +139,29 @@ def test_evaluate_validates_its_input(client):
     assert c.post("/api/prompts/nope/evaluate", json=EVAL).status_code == 422  # only intent and tier1 can be scored
     assert c.post("/api/prompts/intent/evaluate", json={**EVAL, "systems": []}).status_code == 422
     assert c.post("/api/prompts/intent/evaluate", json={**EVAL, "user_template": "{bad}"}).status_code == 422
+
+
+# ---- dates reported by the intent prompt
+
+def intent_with_dates(refs, is_change=True, conf=0.9):
+    blank = {"weekday": "", "relative": "", "qualifier": "", "month": 0, "day": 0}
+    return json.dumps({"is_schedule_change": is_change, "confidence": conf, "reason": "r",
+                       "date_references": [{**blank, **r} for r in refs]})
+
+
+def test_intent_scoring_checks_the_resolved_dates(csv_path):
+    one = evaluate.load_cases(csv_path)[0]  # sent Tuesday 2025-03-04, expects 2025-03-04
+    ok = evaluate.score_intent(intent_with_dates([{"relative": "tonight"}]), one, 0.8)
+    assert (ok["verdict"], ok["date"]) == ("pass", "ok")
+    wrong = evaluate.score_intent(intent_with_dates([{"weekday": "friday"}]), one, 0.8)
+    assert wrong["date"] == "wrong" and "expected 2025-03-04" in wrong["detail"] and "2025-03-07" in wrong["detail"]
+    none = evaluate.score_intent(intent_with_dates([]), one, 0.8)  # the message names no date: the label's date is implied
+    assert none["date"] == "none" and "no date named" in none["detail"]
+
+
+def test_non_changes_are_not_date_scored_and_the_summary_counts_dates(csv_path):
+    other = evaluate.load_cases(csv_path)[1]
+    assert "date" not in evaluate.score_intent(intent_with_dates([], is_change=False), other, 0.8)
+    s = evaluate.summarize([{"verdict": "pass", "date": "ok"}, {"verdict": "pass", "date": "wrong"},
+                            {"verdict": "pass", "date": "none"}, {"verdict": "extra"}])
+    assert (s["dates_scored"], s["dates_ok"], s["dates_none"]) == (2, 1, 1)

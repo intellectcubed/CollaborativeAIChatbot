@@ -21,7 +21,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from chatbot.channels import load_channels
-from chatbot.agent.interpret import render_user
+from chatbot.agent.interpret import NO_DATES, render_user
+from chatbot.agent.schedule_info import NO_SCHEDULE
 from chatbot.config import GROUP_TZ, PROMPTS_DIR, Settings, load_allowlist, load_roster
 from chatbot.pii.filter import PiiFilter
 from chatbot.policy import load_policy
@@ -71,6 +72,7 @@ class EvalRequest(BaseModel):
 
 
 DEFAULT_CASES = Path(os.environ.get("TEST_CASES_PATH", Path(__file__).resolve().parents[3] / "test_cases" / "labeled_examples.csv"))
+FIELDS_MESSAGE = "template may only use {message_time}, {sender}, {message}, {dates} and {schedule}"
 REFINE_TEMPLATE = "prompt_refinement.md"
 REFINE_MODEL = os.environ.get("REFINE_MODEL", "claude-sonnet-5-5")
 REFINE_SYSTEM = "Follow the instructions in the user message. Respond only with the JSON object they ask for."
@@ -195,10 +197,14 @@ def create_app(settings=None, store=None, roster=None, post=None, prompts_dir=No
         if not got or not got["output"]:
             raise HTTPException(404, "this trace never reached the agent")
         o = got["output"]
+        intent_step = next((st for st in t["steps"] if st["name"] == "intent"), None)
+        dates = ((intent_step or {}).get("output") or {}).get("dates_text") or NO_DATES
+        schedule_step = next((st for st in t["steps"] if st["name"] == "schedule"), None)
+        schedule = ((schedule_step or {}).get("output") or {}).get("schedule_text") or NO_SCHEDULE
         try:
-            return render_user(template, o["member"], o["squad"], datetime.fromisoformat(o["sent_at"]), o["text"])
+            return render_user(template, o["member"], o["squad"], datetime.fromisoformat(o["sent_at"]), o["text"], dates, schedule)
         except (KeyError, IndexError, ValueError):
-            raise HTTPException(422, "template may only use {message_time}, {sender} and {message}")
+            raise HTTPException(422, FIELDS_MESSAGE)
 
     @app.get("/api/prompts/{name}")
     def get_prompt(name: str):
@@ -285,7 +291,7 @@ def create_app(settings=None, store=None, roster=None, post=None, prompts_dir=No
             try:
                 user = render_user(req.user_template, m.member if m else None, m.squad if m else None, c.sent_at, str(filtered.text))
             except (KeyError, IndexError, ValueError):
-                raise HTTPException(422, "template may only use {message_time}, {sender} and {message}")
+                raise HTTPException(422, FIELDS_MESSAGE)
             work += [(v, c, row, user) for v in req.systems]
 
         def run(item):
@@ -314,9 +320,9 @@ def create_app(settings=None, store=None, roster=None, post=None, prompts_dir=No
     def save_prompt(name: str, req: PromptEdit):
         d = prompt_dir(name)
         try:
-            req.user_template.format(message_time="", sender="", message="")
+            req.user_template.format(message_time="", sender="", message="", dates="", schedule="")
         except (KeyError, IndexError, ValueError):
-            raise HTTPException(422, "template may only use {message_time}, {sender} and {message}")
+            raise HTTPException(422, FIELDS_MESSAGE)
         if not req.system.strip() or not req.user_template.strip():
             raise HTTPException(422, "both parts are required")
         for fname, text in (("system.md", req.system.strip()), ("user.md", req.user_template.rstrip("\n"))):

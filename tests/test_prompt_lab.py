@@ -184,6 +184,31 @@ def test_refine_passes_model_errors_through_and_rejects_unreadable_answers(tmp_p
     assert client.post("/api/prompts/intent/refine", json=REFINE).status_code == 502
 
 
+def test_render_uses_the_dates_the_intent_step_worked_out(tmp_path, prompts):
+    from chatbot.models import RedactedText
+
+    base = Settings.from_env()
+    s = Settings(str(tmp_path / "d.db"), base.queue_url, None, base.roster_path, None)
+    store = TraceStore(s.trace_db_path)
+    for tid, with_intent in (("t1", False), ("t2", True)):
+        store.start_trace(tid, "replay", "u", "x")
+        with store.step(tid, "agent_received") as st:
+            st.output = {"member": "Member-1", "squad": "54", "sent_at": "2026-11-02T14:10:00-05:00", "text": RedactedText.mint("54 short Wednesday")}
+        if with_intent:
+            with store.step(tid, "intent") as st:
+                st.output = {"dates_text": RedactedText.mint('"wednesday" = Wednesday 2026-11-04')}
+    client = TestClient(create_replay(s, store, prompts_dir=prompts))
+    body = {**BODY, "user_template": "{message}\nDates: {dates}"}
+    assert client.post("/api/prompts/tier1/render", json={**body, "trace_id": "t1"}).json()["user"].endswith("Dates: not extracted")
+    assert client.post("/api/prompts/tier1/render", json={**body, "trace_id": "t2"}).json()["user"].endswith('Dates: "wednesday" = Wednesday 2026-11-04')
+
+
+def test_templates_may_use_the_dates_field(stack):
+    client, _, prompts = stack
+    r = client.put("/api/prompts/tier1", json={"system": "S", "user_template": "{message}\nDates: {dates}"})
+    assert r.status_code == 200 and "Dates: {dates}" in (prompts / "tier1" / "user.md").read_text()
+
+
 def test_the_committed_template_only_uses_known_fields():
     import re
     text = (REAL_PROMPTS / "prompt_refinement.md").read_text()

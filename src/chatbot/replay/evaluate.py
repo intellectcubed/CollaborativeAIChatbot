@@ -5,8 +5,9 @@ is saved. Pure functions: no model calls and no files except the CSV.
 
 Two prompts can be scored:
   intent: did the gate behave? A real schedule change that the gate would skip is a MISS (the costly
-          mistake); a non-change that is let through is only a wasted Tier 1 call.
-  tier1:  are the commands right? Compared as sets of (action, squad, date, start, end); Clarify
+          mistake); a non-change that is let through is only a wasted Tier 1 call. The date words it
+          reports are also resolved to dates and checked against the dates the example expects.
+  tier1: are the commands right? Compared as sets of (action, squad, date, start, end); Clarify
           commands are ignored. A message that is not a schedule change passes if it yields no commands.
 """
 
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from chatbot.agent import dates as dates_mod
 from chatbot.agent import intent as intent_mod
 from chatbot.agent import interpret as interpret_mod
 
@@ -70,11 +72,27 @@ def score_intent(text: str, case: Case, skip_confidence: float) -> dict:
         return {"verdict": "error", "detail": "unreadable response"}
     skipped = intent_mod.should_skip(verdict, skip_confidence)
     got = f"{'schedule change' if verdict.is_schedule_change else 'not a change'} ({verdict.confidence:.2f})" + (", skipped" if skipped else "")
+    date_check = _score_dates(verdict, case)
+    if date_check:
+        got += f" · {'no date named' if date_check['date'] == 'none' else 'dates ' + date_check['date']}" + (f" (expected {date_check['want']}, got {date_check['got']})" if date_check["date"] == "wrong" else "")
+    extra = {"date": date_check["date"]} if date_check else {}
     if case.is_change and skipped:
-        return {"verdict": "miss", "detail": got}  # the costly mistake: a real change would never reach Tier 1
+        return {"verdict": "miss", "detail": got, **extra}  # the costly mistake: a real change would never reach Tier 1
     if not case.is_change and not skipped:
-        return {"verdict": "extra", "detail": got}  # harmless: only costs a Tier 1 call
-    return {"verdict": "pass", "detail": got}
+        return {"verdict": "extra", "detail": got, **extra}  # harmless: only costs a Tier 1 call
+    return {"verdict": "pass", "detail": got, **extra}
+
+
+def _score_dates(verdict, case: Case) -> dict | None:
+    """Did the reported date words resolve to every date the example expects? Only for real changes with dates."""
+    want = sorted({e[2] for e in case.expected if e[2]})
+    if not (case.is_change and want):
+        return None
+    resolution = dates_mod.resolve(verdict.date_references, case.sent_at)
+    if not resolution.items:
+        return {"date": "none"}  # most real messages name no date at all; the label's date is implied, so this is not an error
+    got = sorted({d.isoformat() for d in resolution.dates})
+    return {"date": "ok" if set(want) <= set(got) else "wrong", "want": ", ".join(want), "got": ", ".join(got)}
 
 
 def _commands(interpretation) -> set[tuple]:
@@ -109,4 +127,6 @@ def summarize(results: list[dict]) -> dict:
     for r in results:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
     scored = sum(v for k, v in counts.items() if k != "skipped")
-    return {"counts": counts, "scored": scored, "passed": counts.get("pass", 0)}
+    dates = [r["date"] for r in results if r.get("date")]
+    return {"counts": counts, "scored": scored, "passed": counts.get("pass", 0),
+            "dates_scored": dates.count("ok") + dates.count("wrong"), "dates_ok": dates.count("ok"), "dates_none": dates.count("none")}
