@@ -40,7 +40,7 @@ def test_no_crew_renders_calendar_call_and_traces_prompt_and_response(store):
     status, st = steps(store)
     assert status == "done"
     assert st["reply"]["output"]["lines"] == ["Call NoCrew on calendar for date 2025-03-05 (squad 54, 2200-0100)"]
-    assert st["llm:tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100")
+    assert st["llm:tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100\nDates the message refers to (worked out by code from its wording): not extracted\nCalendar for those dates: not looked up")
     assert st["llm:tier1"]["input"]["model"] == "claude-haiku-5-5"
     assert st["llm:tier1"]["output"]["cost_usd"] == 0.00015  # 1000 in x $0.10/M + 100 out x $0.50/M
     out = st["llm:tier1"]["output"]

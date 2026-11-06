@@ -19,3 +19,7 @@ allow_cross_squad_edits = false
 
 # Tell the sender what was done ("Called NoCrew squad 54 ...")? Questions and refusals are always sent.
 announce_results = false
+
+# When a message reads as a squad giving up coverage on a date, and the sender's squad is not on the
+# calendar for that date, skip the model and ask the sender which day they meant. Adds never ask.
+ask_if_unscheduled = true

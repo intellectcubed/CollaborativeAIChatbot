@@ -16,3 +16,15 @@ The text was redacted before you saw it; placeholders like [member] or [phone] s
 Missing a real schedule change is worse than a false alarm, so when you are unsure, answer true with a low confidence.
 
 confidence is your confidence (0 to 1) in your answer. reason is one short sentence.
+
+date_references lists the dates the message talks about, as the message words them. Do not work out calendar dates and do not use the message time: only report the words, one entry per date mentioned. Leave a field as "" (or 0 for month and day) when it does not apply.
+- weekday: the day name used, in lower case ("wednesday"). "Wednesday night" is weekday wednesday.
+- relative: "today", "tonight", "tomorrow" or "yesterday", when the message uses that word.
+- qualifier: "this" or "next" when the message says "this Friday" or "next Friday".
+- month and day: numbers, when a calendar date is written ("11/4" is month 11, day 4; "Nov 4th" the same).
+Examples: "34 is challenged for Wednesday" gives one entry with weekday wednesday. "no crew tonight" gives one entry with relative tonight. "short Friday and Saturday night" gives two entries. A message that names no date, or is not a schedule change, gives an empty list.
+
+direction says which way the schedule change goes, from the point of view of the squad it is about:
+- "remove": the squad is giving up coverage, or cannot staff a shift or part of one ("short", "no crew", "can't cover", "challenged", "may not make it").
+- "add": the squad is offering or taking coverage ("can take Friday night", "I can cover 42", "we got a crew after all").
+- "unclear": you cannot tell, or the message is not a schedule change.

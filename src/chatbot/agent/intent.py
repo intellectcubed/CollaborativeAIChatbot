@@ -5,14 +5,21 @@ so a 'no' below the confidence threshold, or any failure of the detector, lets t
 """
 
 import json
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from chatbot.agent.dates import DateReference
 
 
 class IntentResult(BaseModel):
     is_schedule_change: bool
     confidence: float
     reason: str
+    date_references: list[DateReference] = Field(default_factory=list)  # the date words in the message, not dates
+    # Is the squad giving up coverage ("remove"), taking on coverage ("add"), or is it unclear? Only "remove"
+    # lets the schedule lookup ask "that squad is not on the schedule then", since adds are normally unscheduled.
+    direction: Literal["remove", "add", "unclear"] = "unclear"
 
 
 def parse(text: str) -> IntentResult:

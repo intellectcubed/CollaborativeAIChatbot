@@ -23,7 +23,7 @@ class Validate(Stage):
 
     def run(self, ctx, step):
         known = load_allowlist().squads
-        days: dict[date, object] = {}
+        days = ctx.day_cache  # shared with the schedule lookup, so each day is fetched once per message
         plan: list[PlannedAction] = []
         for command in ctx.interpretation.commands:
             plan.extend(self._expand(command, ctx, known, days))

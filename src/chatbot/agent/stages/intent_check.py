@@ -1,4 +1,4 @@
-from chatbot.agent import intent, interpret
+from chatbot.agent import dates, intent, interpret
 from chatbot.agent.pipeline import Stage
 from chatbot.models import RedactedText
 from chatbot.prompts import load_prompt
@@ -23,7 +23,9 @@ class IntentCheck(Stage):
         verdict = intent.parse(result.text)
         skip = intent.should_skip(verdict, ctx.config.intent_skip_confidence)
         ctx.intent = verdict
+        ctx.dates = dates.resolve(verdict.date_references, ctx.event.sent_at)
         step.output = {"is_schedule_change": verdict.is_schedule_change, "confidence": verdict.confidence,
-                       "reason": RedactedText.mint(verdict.reason), "skip": skip}
+                       "reason": RedactedText.mint(verdict.reason), "skip": skip,
+                       "dates": ctx.dates.trace(), "dates_text": RedactedText.mint(ctx.dates.text())}
         if skip:
             ctx.outcome = "ignored"

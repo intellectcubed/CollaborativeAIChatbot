@@ -13,9 +13,11 @@ Stage contract:
 import logging
 from dataclasses import dataclass, field
 
+from chatbot.agent.dates import Resolution
 from chatbot.agent.interpret import Interpretation
 from chatbot.agent.intent import IntentResult
 from chatbot.agent.plan import PlannedAction
+from chatbot.agent.schedule_info import ScheduleInfo
 from chatbot.channels import Channels
 from chatbot.interfaces.llm import is_transient as _llm_transient
 from chatbot.interfaces.traced_llm import BoundLlm
@@ -52,9 +54,13 @@ class Context:
     llm: BoundLlm
     config: AgentConfig
     intent: IntentResult | None = None
+    dates: Resolution | None = None  # dates worked out from the intent step's date words; None: not extracted
+    schedule: ScheduleInfo | None = None  # the calendar on those dates; None: not looked up
+    short_circuit: bool = False  # the schedule lookup already has a question for the sender: skip Tier 1
     interpretation: Interpretation | None = None
     lines: list[str] = field(default_factory=list)
     calendar: Calendar | None = None  # None: the calendar stages are skipped
+    day_cache: dict = field(default_factory=dict)  # date -> DaySchedule, so each day is fetched once per message
     policy: Policy = field(default_factory=Policy)
     plan: list[PlannedAction] = field(default_factory=list)
     decision: str | None = None  # from the gate: apply | confirm | flag

@@ -30,5 +30,8 @@ class FakeLlm:
         return LlmResult(text, model, 1000, 100, "end_turn", "req_test")
 
 
-def intent_reply(is_schedule_change, confidence=0.95, reason="test"):
-    return json.dumps({"is_schedule_change": is_schedule_change, "confidence": confidence, "reason": reason})
+def intent_reply(is_schedule_change, confidence=0.95, reason="test", dates=(), direction="unclear"):
+    """`dates` are the date words the model reports, e.g. [{"weekday": "friday"}]; missing fields are blank."""
+    blank = {"weekday": "", "relative": "", "qualifier": "", "month": 0, "day": 0}
+    return json.dumps({"is_schedule_change": is_schedule_change, "confidence": confidence, "reason": reason,
+                       "date_references": [{**blank, **d} for d in dates], "direction": direction})

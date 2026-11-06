@@ -10,9 +10,13 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+from chatbot.agent.schedule_info import NO_SCHEDULE
 from chatbot.config import GROUP_TZ
 from chatbot.models import Event, RedactedText
 from chatbot.prompts import Prompt, load_prompt  # noqa: F401  (re-exported for callers and tests)
+
+NO_DATES = "not extracted"  # what the Tier 1 message says when the intent step did not report dates
+
 
 class Command(BaseModel):
     action: Literal["NoCrew", "AddCrew", "GetShift", "Clarify"]
@@ -50,15 +54,17 @@ class Interpretation(BaseModel):
     reasoning: str
 
 
-def render_user(template: str, member: str | None, squad: str | None, sent_at: datetime, text: str) -> str:
+def render_user(template: str, member: str | None, squad: str | None, sent_at: datetime, text: str,
+                dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> str:
     """Fill a user template: when it was sent, who sent it (roster pseudonym and squad), and the text."""
     sent = sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
     who = f"{member} (squad {squad})" if member else "unknown sender"
-    return template.format(message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=text)
+    return template.format(message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=text,
+                           dates=dates, schedule=schedule)
 
 
-def build_user_message(event: Event, prompt: Prompt) -> RedactedText:
-    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text))
+def build_user_message(event: Event, prompt: Prompt, dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> RedactedText:
+    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text, dates, schedule))
 
 
 def parse(text: str) -> Interpretation:

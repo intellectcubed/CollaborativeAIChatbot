@@ -6,7 +6,7 @@ message, so an edit takes effect on the next message with no restart.
 | File | Purpose |
 |---|---|
 | `tier1/system.md` | System prompt for the Tier 1 interpretation call |
-| `tier1/user.md` | Template for the per-message user turn. Fields: `{message_time}`, `{sender}`, `{message}` |
+| `tier1/user.md` | Template for the per-message user turn. Fields: `{message_time}`, `{sender}`, `{message}`, `{dates}` (the dates code worked out from the intent step's `date_references`), `{schedule}` (the calendar for those dates, and whether the sender's squad is on it) |
 | `tier1/schema.json` | JSON schema the response must follow (structured output) |
 | `intent/system.md`, `intent/user.md`, `intent/schema.json` | The intent check: does this look like a request to modify the schedule? A confident "no" skips Tier 1 |
 

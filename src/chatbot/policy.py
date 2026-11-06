@@ -23,6 +23,7 @@ class Policy:
     ask_min_confidence: float = 0.5
     allow_cross_squad_edits: bool = False
     announce_results: bool = False  # also tell the sender what was done; questions are always sent
+    ask_if_unscheduled: bool = False  # skip Tier 1 and ask when a squad giving up coverage is not on the schedule that day
 
     @property
     def live(self) -> bool:
@@ -50,9 +51,10 @@ def load_policy(path: Path | None = None) -> Policy:
             ask_min_confidence=float(data.get("ask_min_confidence", 0.5)),
             allow_cross_squad_edits=bool(data.get("allow_cross_squad_edits", False)),
             announce_results=data.get("announce_results", False),
+            ask_if_unscheduled=data.get("ask_if_unscheduled", False),
         )
-        if not isinstance(policy.announce_results, bool):
-            raise ValueError("announce_results must be true or false")
+        if not isinstance(policy.announce_results, bool) or not isinstance(policy.ask_if_unscheduled, bool):
+            raise ValueError("announce_results and ask_if_unscheduled must be true or false")
         if policy.mode not in MODES or not 0 <= policy.ask_min_confidence <= policy.apply_min_confidence <= 1:
             raise ValueError("invalid policy values")
         return policy
