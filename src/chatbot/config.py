@@ -11,6 +11,13 @@ CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", Path(__file__).resolve().parents[
 PROMPTS_DIR = Path(os.environ.get("PROMPTS_DIR", Path(__file__).resolve().parents[2] / "prompts"))
 GROUP_TZ = ZoneInfo("America/New_York")
 
+# Local development: the Postgres server from docker/compose.yml, test database. Set DATABASE_URL to change it.
+DEFAULT_DATABASE_URL = "postgresql://chatbot:local@localhost:5432/chatbot_test"
+
+
+def database_url() -> str:
+    return os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+
 
 @dataclass(frozen=True)
 class Member:
@@ -56,6 +63,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        """Read the settings from the environment, with defaults for local development."""
         candidates = [CONFIG_DIR / n for n in ("roster.local.csv", "roster.local.json", "roster.example.json")]
         default_roster = next((c for c in candidates if c.exists()), candidates[-1])
         return cls(

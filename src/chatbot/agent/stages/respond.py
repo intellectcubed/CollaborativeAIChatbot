@@ -30,7 +30,7 @@ class Respond(Stage):
         out = []
         for seq, msg in enumerate(self._messages(ctx), start=1):
             row = {"seq": seq, "kind": msg.kind, "text": msg.text}
-            if not ctx.store.outbox_begin(msg.trace_id, seq, msg.kind, msg.to_member, msg.text):
+            if not ctx.store.outbox_begin(msg.trace_id, seq, msg.kind, msg.to_member, msg.text, msg.squad):
                 out.append({**row, "channel": channel.name, "status": "already_sent"})
                 continue
             if msg.kind == "flag":
@@ -43,6 +43,11 @@ class Respond(Stage):
                     log.warning("trace=%s send via %s failed: %s", msg.trace_id, channel.name, type(exc).__name__)
                     result_channel, status, error = channel.name, "failed", type(exc).__name__
             ctx.store.outbox_finish(msg.trace_id, seq, result_channel, status, error)
+            if status == "sent" and msg.squad:
+                # Only what was actually delivered is part of the chat. A log-only reply was never posted.
+                ctx.store.record_message(kind="bot", sent_at=ctx.event.sent_at, squad=msg.squad, speaker="bot",
+                                         addressee=msg.to_member, text=msg.text, source=ctx.event.source,
+                                         trace_id=msg.trace_id)
             out.append({**row, "channel": result_channel, "status": status, "error": error})
         step.output = {"announce_results": ctx.policy.announce_results, "messages": out}
 
@@ -51,7 +56,7 @@ class Respond(Stage):
         e = ctx.event
 
         def msg(kind, text):
-            return OutboundMessage(e.trace_id, e.group_id, e.sender_id, e.member, kind, RedactedText.mint(text))
+            return OutboundMessage(e.trace_id, e.group_id, e.sender_id, e.member, kind, RedactedText.mint(text), e.squad)
 
         found = []
         if ctx.plan:

@@ -5,20 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Replay tool</title>
 <style>
+  [hidden] { display: none !important; }  /* the label rule below would otherwise show hidden labels */
   body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 22rem 1fr; grid-template-rows: auto 1fr; height: 100vh; }
   aside { border-right: 1px solid #ccc; padding: 1rem; overflow: auto; }
   main { padding: 1rem; overflow: auto; }
   label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
   select, input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem; }
   button { margin-top: .8rem; cursor: pointer; }
-  ul { list-style: none; padding: 0; margin: 1rem 0 0; }
+  button:disabled { cursor: default; opacity: .5; }
+  ul { list-style: none; padding: 0; margin: .5rem 0 0; }
   li { padding: .4rem; border-bottom: 1px solid #eee; cursor: pointer; }
   li:hover, li.sel { background: #eef; }
   .status { color: #555; font-size: 12px; }
   pre { background: #f6f6f6; padding: .6rem; overflow: auto; }
   .step { border: 1px solid #ddd; border-radius: 6px; margin: .6rem 0; padding: .5rem; }
   .err { color: #b00; }
+  /* What the system posted to the chat: wraps, scrolls, and always shows at least four lines of text. */
+  .posted { box-sizing: border-box; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 4em; max-height: 14em; overflow-y: auto;
+            background: #f6f6f6; padding: .6rem; border-radius: 4px; margin-top: .4rem; line-height: 1.4; }
+  /* The output panel has a fixed height, so it never pushes the trace list around. */
+  .out { box-sizing: border-box; height: 13rem; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: .5rem; background: #fcfcfc; }
+  .out b { display: block; margin-top: .4rem; }
+  .badge { background: #c00; color: #fff; border-radius: 4px; padding: 0 .4rem; font-size: 11px; font-weight: 600; margin-left: .3rem; }
+  .badge[hidden] { display: none; }
   button.lab { width: auto; margin: 0 0 0 .5rem; padding: .1rem .5rem; font-size: 12px; }
+  .tabs { display: flex; gap: .3rem; border-bottom: 2px solid #ccc; margin-bottom: .8rem; align-items: center; flex-wrap: wrap; }
+  .tabs button { width: auto; margin: 0; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; background: #f4f4f4; padding: .4rem .9rem; }
+  .tabs button.on { background: #fff; font-weight: 700; border-color: #888; }
+  .tabs .spacer { flex: 1; }
+  .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .4rem 0; }
+  .bar > * { width: auto; margin: 0; }
+  .bar input, .bar select { width: auto; }
+  .pager { display: flex; gap: .3rem; align-items: center; margin-top: .5rem; }
+  .pager button { width: auto; margin: 0; padding: .2rem .5rem; font-size: 12px; }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.grid td, table.grid th { border-bottom: 1px solid #eee; padding: .25rem .4rem; text-align: left; vertical-align: top; }
+  table.grid td.txt { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 14rem; }
+  table.grid tr.cur { background: #fff6e0; }
+  button.danger { color: #b00; border: 1px solid #b00; background: #fff; }
   dialog { width: 96vw; height: 94vh; max-width: none; max-height: none; box-sizing: border-box; overflow: auto; padding: 1rem 1.5rem; }
   dialog table { border-collapse: collapse; width: 100%; font-size: 12px; }
   dialog td, dialog th { border-bottom: 1px solid #eee; padding: .2rem .4rem; text-align: left; vertical-align: top; }
@@ -29,80 +53,243 @@
   dialog .responses pre { min-height: 8rem; margin-top: .2rem; }
   @media (max-width: 800px) { dialog .responses { grid-template-columns: 1fr; } }
   dialog textarea { font: 12px ui-monospace, monospace; }
-  dialog .row button { width: auto; margin-right: .5rem; padding: .4rem 1rem; }
+  dialog .row button, .row button { width: auto; margin-right: .5rem; padding: .4rem 1rem; }
   dialog pre { white-space: pre-wrap; }
+  .prompt-panel textarea { font: 12px ui-monospace, monospace; }
+  .prompt-panel .responses { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .prompt-panel .responses pre { min-height: 8rem; margin-top: .2rem; }
+  .prompt-panel .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .prompt-panel .row button { width: auto; margin: .3rem 0; padding: .4rem 1rem; }
+  .prompt-panel .scroll { max-height: 18rem; overflow: auto; margin-top: .4rem; }
+  .prompt-panel table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .prompt-panel td, .prompt-panel th { border-bottom: 1px solid #eee; padding: .2rem .4rem; text-align: left; vertical-align: top; }
+  .prompt-panel tr.changed { background: #fff6e0; }
+  .prompt-panel .responses + .row { margin-top: .4rem; }
   #banner { grid-column: 1 / -1; color: #c00; font-weight: 700; padding: .5rem 1rem; border-bottom: 2px solid #c00; }
+  .small { font-size: 12px; padding: .1rem .5rem; margin: 0; width: auto; }
 </style>
 </head>
 <body>
 <div id="banner">Checking agent settings...</div>
 <aside>
-  <h3>Post a message</h3>
+  <label style="font-weight:600"><input id="liveCal" type="checkbox" checked style="width:auto"> Live calendar updates <span class="status">(off: messages are only previewed)</span></label>
+  <h3 style="margin:.8rem 0 0">Post a message</h3>
   <label for="sender">From</label><select id="sender"></select>
   <label for="when">Sent at (New York time)</label><input id="when" type="datetime-local">
-  <label for="text">Message</label><textarea id="text" rows="4"></textarea>
+  <label for="text">Message</label><textarea id="text" rows="3"></textarea>
   <button id="send">Send to message processor</button>
   <div id="result" class="status"></div>
-  <h3>Traces</h3>
+
+  <h3 style="margin:1rem 0 .3rem">Output</h3>
+  <div id="out" class="out"><span class="status">Send a message to see what it did.</span></div>
+
+  <h3 style="margin:1rem 0 0">Traces
+    <button id="refresh" type="button" class="small" style="margin-left:.4rem">Refresh</button></h3>
+  <label style="font-weight:400;margin:.2rem 0"><input id="mineOnly" type="checkbox" style="width:auto"> Only messages sent from this tab</label>
   <ul id="traces"></ul>
+  <div class="pager">
+    <button id="prevPage" type="button" class="small">Previous</button>
+    <span id="pageInfo" class="status" style="flex:1;text-align:center"></span>
+    <button id="nextPage" type="button" class="small">Next</button>
+  </div>
+  <button id="clearData" type="button" class="danger" style="margin-top:1.2rem">Clear test data (traces, replies, history)</button>
 </aside>
-<main><h3>Trace <a href="/outbox" target="replies" style="font-size:12px;font-weight:400">pop out replies</a></h3><div id="detail">Select a trace.</div></main>
-<dialog id="lab">
-  <h3 id="labTitle"></h3>
-  <div id="labMeta" class="status"></div>
-  <details><summary>As sent in this trace (read-only)</summary><pre id="labSent"></pre></details>
-  <details><summary>Response schema (read-only, from the prompt's schema.json)</summary><pre id="labSchema"></pre></details>
-  <label for="labSystem">System prompt</label><textarea id="labSystem" rows="12"></textarea>
-  <label for="labUser">User message template <span class="status">fields: {message_time} {sender} {message} {dates} {schedule}</span></label>
-  <textarea id="labUser" rows="4"></textarea>
-  <label>User message for this trace (what Send will use)</label><pre id="labRendered"></pre>
-  <div class="row">
-    <button id="labSend">Send</button><button id="labAi" title="AI-assisted prompt refinement" aria-label="AI-assisted prompt refinement">✨</button>
-    <button id="labEvalBtn" title="Score the system prompt above against the labeled examples in test_cases/">Run test cases</button>
-    <button id="labSave">Save to prompt files</button>
-    <button id="labReset">Reset to saved</button><button id="labClose">Close</button>
-  </div>
-  <div id="labEval" class="step" hidden><b>Labeled examples</b> <span id="labEvalStatus" class="status"></span>
-    <div id="labEvalBody"></div></div>
-  <div id="labAiPanel" class="step" hidden>
-    <label for="labHints">Provide hints to the LLM on how this should be fixed or what was observed</label>
-    <textarea id="labHints" rows="3"></textarea>
-    <label style="font-weight:400"><input id="labAiTest" type="checkbox" checked style="width:auto"> Also test the suggestion against the labeled examples in test_cases/ (about 30 extra model calls, a cent or two)</label>
-    <div class="row" style="margin-top:.5rem">
-      <button id="labAiGo">Suggest</button><button id="labAiCancel">Cancel</button>
-      <button id="labAiUndo" hidden>Undo accepted suggestion</button>
-      <span id="labAiStatus" class="status"></span>
+
+<main>
+  <nav class="tabs">
+    <button type="button" data-tab="trace" class="on">Trace</button>
+    <button type="button" data-tab="history">History</button>
+    <button type="button" data-tab="batch">Batch</button>
+    <button type="button" data-tab="prompts">Prompts</button>
+    <span class="spacer"></span>
+    <a href="/outbox" target="replies" class="status">pop out replies</a>
+    <button id="llmBtn" class="lab" title="Which model each component uses, and the budget">LLM settings</button>
+  </nav>
+
+  <!-- Trace: the selected message's steps. Replaced each time a new message is sent. -->
+  <section id="tab-trace">
+    <div id="detail">Select a trace, or send a message.</div>
+  </section>
+
+  <!-- History: the stored chat, which the next message's prompt is given. Full control: add, edit, delete, clear. -->
+  <section id="tab-history" hidden>
+    <div class="bar">
+      <label style="margin:0">Show squad <select id="hSquad"></select></label>
+      <button id="hRefresh" type="button" class="small">Refresh</button>
+      <button id="hClear" type="button" class="small danger">Clear history</button>
+      <span id="hCount" class="status"></span>
     </div>
-    <div id="labAiResult" hidden>
-      <label>What the model changed and why</label><pre id="labAiWhy"></pre>
-      <label>Suggested system prompt</label><pre id="labAiProposed"></pre>
-      <div id="labAiEval"><span id="labAiEvalStatus" class="status"></span><div id="labAiEvalBody"></div></div>
-      <div class="row"><button id="labAiAccept">Accept</button><button id="labAiReject">Reject</button></div>
+    <div class="step">
+      <b>What a new message from this squad is given</b>
+      <div class="bar">
+        <label style="margin:0">at (New York time)</label><input id="hAt" type="datetime-local">
+        <button id="hPreviewBtn" type="button" class="small">Show</button>
+      </div>
+      <pre id="hPreview" class="posted" style="min-height:3em">(press Show)</pre>
     </div>
-  </div>
-  <div class="responses">
-    <div><label>Original response <span id="labOrigMeta" class="status"></span></label><pre id="labOriginal"></pre></div>
-    <div><label>New response <span id="labStatus" class="status"></span></label><pre id="labResult"></pre></div>
-  </div>
+    <table class="grid" id="hTable"></table>
+    <div class="step">
+      <b id="hFormTitle">Add a line</b>
+      <div class="bar">
+        <label style="margin:0">Squad <select id="hFormSquad"></select></label>
+        <label style="margin:0">Kind <select id="hKind"><option value="member">member</option><option value="bot">bot</option></select></label>
+        <label style="margin:0" id="hSpeakerWrap">Speaker <select id="hSpeaker"></select></label>
+        <label style="margin:0" id="hAddresseeWrap" hidden>To (member) <select id="hAddressee"></select></label>
+        <label style="margin:0">Sent at (New York time) <input id="hWhen" type="datetime-local"></label>
+      </div>
+      <label for="hText">Text</label><textarea id="hText" rows="3"></textarea>
+      <div class="bar">
+        <button id="hAdd" type="button" class="small" style="padding:.4rem 1rem">Add line</button>
+        <button id="hCancelEdit" type="button" class="small" hidden>Cancel edit</button>
+        <span id="hStatus" class="status"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Batch: a scenario's messages played through the processor, one at a time. -->
+  <section id="tab-batch" hidden>
+    <div class="bar">
+      <label style="margin:0">Scenario <select id="bScenario"></select></label>
+      <button id="bLoad" type="button" class="small">Load scenario</button>
+      <span id="bStatus" class="status"></span>
+    </div>
+    <div id="bDesc" class="status" style="margin-bottom:.4rem"></div>
+    <div class="bar">
+      <label style="margin:0">From <input id="bFrom" type="date"></label>
+      <label style="margin:0">To <input id="bTo" type="date"></label>
+      <button id="bRange" type="button" class="small">Run range</button>
+      <button id="bDay" type="button" class="small">Run one day (From)</button>
+      <button id="bAll" type="button" class="small">Play all</button>
+    </div>
+    <div class="bar">
+      <button id="bPause" type="button" class="small">Pause</button>
+      <button id="bStep" type="button" class="small">Step one</button>
+      <button id="bStop" type="button" class="small danger">Stop</button>
+      <button id="bReset" type="button" class="small">Mark all pending</button>
+      <span id="bState" class="status"></span>
+    </div>
+    <p class="status">Each message waits for its trace to finish before the next is sent. Live calendar follows the toggle at the top left.</p>
+    <table class="grid" id="bTable"></table>
+  </section>
+
+  <!-- Prompts: view and edit the prompt, run it, ask for help, score it. Leaving with unsaved changes asks first. -->
+  <section id="tab-prompts" class="prompt-panel" hidden>
+    <div class="bar">
+      <label style="margin:0">Prompt <select id="pName"><option value="intent">intent</option><option value="tier1">tier1</option></select></label>
+      <span id="pSample" class="status"></span>
+      <button id="labClose" type="button" class="small">Back to trace</button>
+    </div>
+    <h3 id="labTitle" style="margin:.2rem 0"></h3>
+    <div id="labMeta" class="status"></div>
+    <details><summary>As sent in the sample trace (read-only)</summary><pre id="labSent"></pre></details>
+    <details><summary>Response schema (read-only, from the prompt's schema.json)</summary><pre id="labSchema"></pre></details>
+    <label for="labSystem">System prompt <span id="labBadge" class="badge" hidden>Modified</span></label><textarea id="labSystem" rows="10"></textarea>
+    <label for="labUser">User message template <span class="status">fields: {message_time} {sender} {message} {dates} {schedule} {history}</span></label>
+    <textarea id="labUser" rows="4"></textarea>
+    <label>User message for the sample (what Send will use)</label><pre id="labRendered"></pre>
+    <div class="row">
+      <button id="labSend">Send</button><button id="labModelBtn" title="Try a different model for this tab only">Model…</button> <span id="labModelName" class="status"></span><button id="labAi" title="AI-assisted prompt refinement" aria-label="AI Assist: AI-assisted prompt refinement">✨ AI Assist</button>
+      <button id="labEvalBtn" title="Score the system prompt above against the labeled examples in test_cases/">Run test cases</button>
+      <button id="labSave" disabled>Save to prompt files</button>
+      <button id="labReset">Reset to saved</button>
+    </div>
+    <div id="labEval" class="step" hidden><b>Labeled examples</b> <span id="labEvalStatus" class="status"></span>
+      <div id="labEvalBody"></div></div>
+    <div id="labAiPanel" class="step" hidden>
+      <label for="labHints">Provide hints to the LLM on how this should be fixed or what was observed</label>
+      <textarea id="labHints" rows="3"></textarea>
+      <label style="font-weight:400"><input id="labAiTest" type="checkbox" checked style="width:auto"> Also test the suggestion against the labeled examples in test_cases/ (about 30 extra model calls, a cent or two)</label>
+      <div class="row" style="margin-top:.5rem">
+        <button id="labAiGo">Suggest</button><button id="labAiCancel">Cancel</button>
+        <label class="status" title="Room for the rewritten prompt. Session only: not saved, and it resets on reload.">Max tokens <input id="labAiMax" type="number" min="1" max="8192" value="4096" style="width:6rem"></label>
+        <button id="labAiUndo" hidden>Undo accepted suggestion</button>
+        <span id="labAiStatus" class="status"></span>
+      </div>
+      <div id="labAiResult" hidden>
+        <label>What the model changed and why</label><pre id="labAiWhy"></pre>
+        <label>Suggested system prompt</label><pre id="labAiProposed"></pre>
+        <div id="labAiEval"><span id="labAiEvalStatus" class="status"></span><div id="labAiEvalBody"></div></div>
+        <div class="row"><button id="labAiAccept">Accept</button><button id="labAiReject">Reject</button></div>
+      </div>
+    </div>
+    <div id="labModelPanel" class="step" hidden>
+      <b>Temporary model for this tab</b> <span class="status">used by Send, AI Assist and the labeled-example runs. Not saved; leaving the tab clears it.</span>
+      <label>Source <select id="labModelSource"><option value="anthropic">anthropic</option><option value="openrouter">openrouter</option></select></label>
+      <label>Model <span class="status">Anthropic: pick from the list. OpenRouter: type to filter, or scroll</span><span id="labModelWrap"></span></label>
+      <label>Effort <span class="status">choices follow the source</span><select id="labModelEffort"></select></label>
+      <div id="labModelCaps" class="status"></div>
+      <div class="row"><button id="labModelApply">Use for this tab</button><button id="labModelClear">Back to configured model</button><button id="labModelHide">Hide</button></div>
+      <div id="labModelStatus" class="status"></div>
+    </div>
+    <div class="responses">
+      <div><label>Original response <span id="labOrigMeta" class="status"></span></label><pre id="labOriginal"></pre></div>
+      <div>
+        <div class="row" style="align-items:center"><button id="labPrev" type="button" style="width:auto" title="Previous run">&lt;</button>
+          <span id="labPage" class="status">No runs yet</span>
+          <button id="labNext" type="button" style="width:auto" title="Next run">&gt;</button></div>
+        <label>New response <span id="labStatus" class="status"></span></label><pre id="labResult"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="unsavedDlg">
+  <h3>Unsaved changes</h3>
+  <p>You have unsaved changes to the prompt. Save them before leaving the Prompts tab?</p>
+  <div class="row"><button id="unsavedYes">Yes, save</button><button id="unsavedNo">No, discard</button><button id="unsavedStay">Stay</button></div>
 </dialog>
+<dialog id="llmDlg">
+  <h3>LLM settings <span class="status">developer mode: saving changes the next message's model right away</span></h3>
+  <div id="llmForm"></div>
+  <div class="row"><button id="llmSave">Save to config/llm.toml</button><button id="llmReload">Reload</button><button id="llmClose">Close</button></div>
+  <div id="llmStatus" class="status"></div>
+  <datalist id="dl-anthropic"></datalist><datalist id="dl-openrouter"></datalist>
+</dialog>
+
 <script>
 const $ = id => document.getElementById(id);
+const TABS = ["trace", "history", "batch", "prompts"];
 let selected = null;
 let members = [];
 let currentTrace = null;
-// Raw text never reaches the server; this browser remembers what it sent so panel 0 can show it.
+let activeTab = "trace", pendingTab = null;
+// Raw text never reaches the server; this browser remembers what it sent so the trace can show it.
 const sentKey = "replay.sent";
 function sentText(id) { try { return (JSON.parse(localStorage.getItem(sentKey)) || {})[id]; } catch (e) { return undefined; } }
 function rememberText(id, text) {
   try { const m = JSON.parse(localStorage.getItem(sentKey)) || {}; m[id] = text; localStorage.setItem(sentKey, JSON.stringify(m)); } catch (e) {}
 }
 
+// Trace IDs posted from this browser tab. The list shows only these, and they are forgotten when the tab closes.
+const sessionKey = "replay.session";
+function sessionTraces() { try { return JSON.parse(sessionStorage.getItem(sessionKey)) || []; } catch (e) { return []; } }
+function addSessionTrace(id) { try { sessionStorage.setItem(sessionKey, JSON.stringify([...sessionTraces(), id])); } catch (e) {} }
+
 async function api(path, opts) {
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error(path + " " + r.status);
   return r.json();
 }
-function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c])); }
+// A JSON call that reports the server's reason when it refuses (422, 403, 404).
+async function call(path, method, body) {
+  const r = await fetch(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+  return r.json();
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+const enc = encodeURIComponent;
+// New York time, for display, and as the value of a datetime-local input.
+function nyTime(iso) {
+  return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric",
+                                                 hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function nyLocal(iso) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    .formatToParts(new Date(iso)).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+function nowLocal() { return nyLocal(new Date().toISOString()); }
 
 async function loadStatus() {
   const s = await api("/api/status");
@@ -110,21 +297,61 @@ async function loadStatus() {
     : s.calendar_url ? `${s.calendar_url} (port ${s.calendar_port ?? "default"})` : "OFF (no CALENDAR_BASE_URL)";
   $("banner").textContent = `CALENDAR_ALLOW_WRITES: ${s.allow_writes ? "ON" : "OFF"} | policy mode: ${s.policy_mode}` +
     ` | ${s.writing ? "WRITES ARE LIVE" : "dry run, nothing is written"} | calendar: ${calendar}` +
-    ` | replies: ${Object.entries(s.routes).map(([k, v]) => k + "→" + v).join(", ")} | announce_results: ${s.announce_results ? "ON" : "OFF"}`;
+    ` | replies: ${Object.entries(s.routes).map(([k, v]) => k + "→" + v).join(", ")} | announce_results: ${s.announce_results ? "ON" : "OFF"}` +
+    (s.llm && s.llm.components ? ` | ${Object.entries(s.llm.components).map(([k, v]) => k + ": " + v).join(", ")} | budget $${s.llm.per_message_usd}/msg, $${s.llm.per_day_usd}/day` +
+      (s.llm.kill_switch ? " | KILL SWITCH ON" : "") : s.llm && s.llm.error ? " | LLM CONFIG ERROR: " + s.llm.error : "");
 }
 async function loadMembers() {
   members = await api("/api/members");
   $("sender").innerHTML = members.map(m => `<option value="${esc(m.sender_id)}">${esc(m.name)} · ${esc(m.member)} · squad ${esc(m.squad)}</option>`).join("");
+  const squads = [...new Set(members.map(m => String(m.squad)))].sort();
+  const firstLoad = !$("hSquad").options.length;
+  $("hSquad").innerHTML = `<option value="">All squads</option>` + squads.map(s => `<option>${esc(s)}</option>`).join("");
+  $("hFormSquad").innerHTML = squads.map(s => `<option>${esc(s)}</option>`).join("");
+  if (firstLoad && squads.length) { $("hSquad").value = squads[0]; $("hFormSquad").value = squads[0]; }
+  $("hSpeaker").innerHTML = members.map(m => `<option value="${esc(m.member)}">${esc(m.name)} · ${esc(m.member)} · squad ${esc(m.squad)}</option>`).join("");
+  $("hAddressee").innerHTML = $("hSpeaker").innerHTML;
 }
-let drawnList = "";
+
+// ---- traces: the list shows this session's messages, ten to a page, newest first
+const PAGE_SIZE = 10;
+let traceList = [], tracePage = 0, drawnList = "";
+// Every trace in the database (newest first), or only this tab's when the box is ticked.
 async function loadTraces() {
-  const traces = await api("/api/traces");
-  const html = traces.map(t =>
-    `<li data-id="${esc(t.trace_id)}" class="${t.trace_id === selected ? "sel" : ""}">${esc(t.sent_at || "")}<br><span class="status">${esc(t.status)} · ${esc(t.source)}</span></li>`).join("");
-  if (html === drawnList) return;  // unchanged: leave the list alone
-  drawnList = html; $("traces").innerHTML = html;
-  document.querySelectorAll("#traces li").forEach(li => li.onclick = () => { selected = li.dataset.id; fillForm(traces.find(t => t.trace_id === selected)); loadTraces(); loadDetail(); });
+  const mine = new Set(sessionTraces());
+  const all = await api("/api/traces");
+  traceList = $("mineOnly").checked ? all.filter(t => mine.has(t.trace_id)) : all;
+  drawTraces();
 }
+$("mineOnly").onchange = () => { tracePage = 0; loadTraces(); };
+function drawTraces() {
+  const pages = Math.max(1, Math.ceil(traceList.length / PAGE_SIZE));
+  tracePage = Math.min(tracePage, pages - 1);
+  const shown = traceList.slice(tracePage * PAGE_SIZE, (tracePage + 1) * PAGE_SIZE);
+  const html = shown.map(t =>
+    `<li data-id="${esc(t.trace_id)}" class="${t.trace_id === selected ? "sel" : ""}">${esc(t.sent_at || "")}<br><span class="status">${esc(t.status)} · ${esc(t.source)}</span></li>`).join("");
+  if (html + tracePage + "/" + pages !== drawnList) {
+    drawnList = html + tracePage + "/" + pages;
+    $("traces").innerHTML = html;
+    document.querySelectorAll("#traces li").forEach(li => li.onclick = () => {
+      selected = li.dataset.id; fillForm(traceList.find(t => t.trace_id === selected)); drawTraces(); loadDetail();
+    });
+  }
+  $("pageInfo").textContent = traceList.length ? `Page ${tracePage + 1} of ${pages}` : "no traces yet";
+  $("prevPage").disabled = tracePage <= 0;
+  $("nextPage").disabled = tracePage >= pages - 1;
+}
+$("prevPage").onclick = () => { tracePage -= 1; drawTraces(); };
+$("nextPage").onclick = () => { tracePage += 1; drawTraces(); };
+
+// Clicking a trace loads it into the composer so it can be sent again.
+function fillForm(t) {
+  if (!t) return;
+  if (members.some(m => m.sender_id === t.sender_id)) $("sender").value = t.sender_id;
+  if (t.sent_at) $("when").value = nyLocal(t.sent_at);
+  $("text").value = sentText(t.trace_id) ?? "";
+}
+
 // The stored step has only the pseudonym; add the name, squad and body this browser knows about.
 function inboundView(o, who, text) {
   const out = {};
@@ -135,17 +362,20 @@ function inboundView(o, who, text) {
   }
   return out;
 }
-// Clicking a trace loads it into the form so it can be sent again.
-function fillForm(t) {
-  if (!t) return;
-  if (members.some(m => m.sender_id === t.sender_id)) $("sender").value = t.sender_id;
-  if (t.sent_at) {
-    const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", hourCycle: "h23",
-      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-      .formatToParts(new Date(t.sent_at)).map(x => [x.type, x.value]));
-    $("when").value = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
-  }
-  $("text").value = sentText(t.trace_id) ?? "";
+// What happened for one message: the actions it took, and what was posted to the chat.
+function outputView(t, replies) {
+  const reply = t.steps.find(s => s.name === "reply");
+  const lines = (reply && reply.output && reply.output.lines) || [];
+  const posted = replies.filter(r => r.status === "sent" && r.channel !== "log");
+  const failed = replies.filter(r => r.status !== "sent");
+  const working = WORKING.includes(t.status);
+  let h = `<span class="status">${esc(t.trace_id)} · ${esc(t.status)}</span>`;
+  if (working) h += `<div class="status">processing...</div>`;
+  if (lines.length) h += `<b>Action taken</b>` + lines.map(l => `<div>${esc(l)}</div>`).join("");
+  h += posted.map(r => `<b>Posted to chat <span class="status">${esc(r.kind)}</span></b><div class="posted">${esc(r.text)}</div>`).join("");
+  h += failed.map(r => `<b class="err">Not delivered (${esc(r.status)})</b><div class="posted">${esc(r.text)}</div>`).join("");
+  if (!working && !lines.length && !posted.length && !failed.length) h += `<div class="status">No action and nothing posted.</div>`;
+  return h;
 }
 function repliesPanel(rows) {
   if (!rows.length) return "";
@@ -155,12 +385,19 @@ function repliesPanel(rows) {
       ` · ${esc(r.channel || "-")} · ${esc(r.status)}${r.error ? " · " + esc(r.error) : ""}</span><pre>${esc(r.text)}</pre></div>`;
   }).join("") + `</div>`;
 }
+let drawnHtml = "", drawnTrace = null, drawnOut = "";
 async function loadDetail() {
   if (!selected) return;
-  const t = await api("/api/traces/" + encodeURIComponent(selected));
-  const replies = await api("/api/traces/" + encodeURIComponent(selected) + "/outbox");
+  const t = await api("/api/traces/" + enc(selected));
+  const replies = await api("/api/traces/" + enc(selected) + "/outbox");
   const who = members.find(m => m.sender_id === t.sender_id);
   const text = sentText(t.trace_id);
+  currentTrace = t;
+  if (isWorking(t)) startPolling();  // a trace still being processed: keep refreshing until it finishes
+
+  const out = outputView(t, replies);
+  if (out !== drawnOut) { $("out").innerHTML = out; drawnOut = out; }
+
   const msg = `<div class="step"><b>0. message</b>` +
     `<div>Sent at: ${esc(t.sent_at || "")}</div>` +
     `<div>Member: ${who ? esc(who.name) + " · " + esc(who.member) + " · squad " + esc(who.squad) : esc(t.sender_id || "unknown")}</div>` +
@@ -171,7 +408,6 @@ async function loadDetail() {
       (s.error ? ` <span class="err">error: ${esc(s.error)}</span>` : "") +
       (s.input ? `<pre>input: ${esc(JSON.stringify(s.input, null, 2))}</pre>` : "") +
       (s.output ? `<pre>output: ${esc(JSON.stringify(s.name === "inbound" ? inboundView(s.output, who, text) : s.output, null, 2))}</pre>` : "") + `</div>`).join("") + repliesPanel(replies);
-  currentTrace = t;
   // The page refreshes every 2 seconds. Redrawing destroys the DOM nodes, which clears any text the user is
   // selecting to copy, so redraw only when something changed and nothing in the panel is selected.
   const switched = selected !== drawnTrace;
@@ -179,59 +415,376 @@ async function loadDetail() {
   $("detail").innerHTML = html; drawnHtml = html; drawnTrace = selected;
   document.querySelectorAll("button.lab").forEach(b => b.onclick = () => openLab(+b.dataset.seq));
 }
-let drawnHtml = "", drawnTrace = null;
 function selectionIn(el) { const s = getSelection(); return !!s && !s.isCollapsed && el.contains(s.anchorNode); }
+// Any [data-trace] link (History, Batch) opens that trace on the Trace tab.
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-trace]");
+  if (!a) return;
+  e.preventDefault();
+  selected = a.dataset.trace; drawTraces(); showTab("trace").then(() => loadDetail());
+});
 
-// ---- prompt editor: look at what was sent, edit it, try it, save it
-let lab = null;  // {name, step, saved}
-function pretty(text) { try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) { return text; } }
-const labBody = () => ({ system: $("labSystem").value, user_template: $("labUser").value, trace_id: lab.step.trace_id,
-                         model: lab.step.input.model, max_tokens: lab.step.input.max_tokens });
-async function labCall(path, method, body) {
-  const r = await fetch(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
-  return r.json();
+// ---- tabs. Leaving the Prompts tab with unsaved changes asks first.
+function labDirty() {
+  return !!lab && !!lab.saved && ($("labSystem").value !== lab.saved.system || $("labUser").value !== lab.saved.user_template);
 }
+async function showTab(name) {
+  if (activeTab === "prompts" && name !== "prompts" && labDirty()) { pendingTab = name; $("unsavedDlg").showModal(); return; }
+  setTab(name);
+}
+function setTab(name) {
+  activeTab = name;
+  for (const t of TABS) $("tab-" + t).hidden = t !== name;
+  document.querySelectorAll("nav.tabs button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
+  if (name === "history") loadHistory();
+  if (name === "batch") loadScenarios();
+  if (name === "prompts" && (!lab || lab.name !== $("pName").value)) pickPrompt();
+}
+document.querySelectorAll("nav.tabs button[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+// ---- history tab: the stored chat. Edits here change the test database directly; production never edits history.
+let editingHistory = null, historyRows = [];
+async function loadHistory() {
+  const squad = $("hSquad").value;
+  historyRows = await api("/api/history?squad=" + enc(squad));
+  $("hCount").textContent = squad ? `${historyRows.length} lines for squad ${squad}` : `${historyRows.length} lines, all squads`;
+  $("hTable").innerHTML = `<tr><th>When (NY)</th><th>Squad</th><th>Kind</th><th>Speaker</th><th>Text</th><th>Source</th><th></th></tr>` +
+    historyRows.map(r => `<tr><td>${esc(nyTime(r.sent_at))}</td><td>${esc(r.squad)}</td><td>${esc(r.kind)}</td>` +
+      `<td>${r.kind === "bot" ? "bot → " + esc(r.addressee || "") : esc(r.speaker)}</td>` +
+      `<td class="txt">${esc(r.text)}</td>` +
+      `<td>${esc(r.source)}${r.trace_id ? ` · <a href="#" data-trace="${esc(r.trace_id)}">trace</a><div class="status">${esc(r.trace_id)}</div>` : ""}</td>` +
+      `<td><button class="small" data-edit="${r.id}">Edit</button> <button class="small danger" data-del="${r.id}">Delete</button></td></tr>`).join("");
+  document.querySelectorAll("#hTable [data-edit]").forEach(b => b.onclick = () => editHistory(+b.dataset.edit));
+  document.querySelectorAll("#hTable [data-del]").forEach(b => b.onclick = () => deleteHistory(+b.dataset.del));
+}
+function setHistoryKind() {
+  const bot = $("hKind").value === "bot";
+  $("hSpeakerWrap").hidden = bot;
+  $("hAddresseeWrap").hidden = !bot;
+}
+$("hKind").onchange = setHistoryKind;
+$("hSquad").onchange = () => { if ($("hSquad").value) $("hFormSquad").value = $("hSquad").value; resetHistoryForm(); loadHistory(); };
+$("hRefresh").onclick = loadHistory;
+function resetHistoryForm() {
+  editingHistory = null;
+  $("hFormTitle").textContent = "Add a line";
+  $("hAdd").textContent = "Add line";
+  $("hCancelEdit").hidden = true;
+  $("hText").value = ""; $("hWhen").value = nowLocal();
+}
+function editHistory(id) {
+  const r = historyRows.find(x => x.id === id);
+  if (!r) return;
+  editingHistory = id;
+  $("hFormTitle").textContent = `Edit line ${id}`;
+  $("hAdd").textContent = "Save changes";
+  $("hCancelEdit").hidden = false;
+  $("hKind").value = r.kind; setHistoryKind();
+  $("hFormSquad").value = r.squad;
+  if (r.kind === "bot") $("hAddressee").value = r.addressee || ""; else $("hSpeaker").value = r.speaker;
+  $("hWhen").value = nyLocal(r.sent_at);
+  $("hText").value = r.text;
+  $("hStatus").textContent = "";
+}
+$("hCancelEdit").onclick = () => { resetHistoryForm(); $("hStatus").textContent = ""; };
+$("hAdd").onclick = async () => {
+  const bot = $("hKind").value === "bot";
+  const body = { kind: $("hKind").value, squad: $("hFormSquad").value, speaker: bot ? "bot" : $("hSpeaker").value,
+                 addressee: bot ? $("hAddressee").value : null, sent_at: $("hWhen").value, text: $("hText").value };
+  if (!body.sent_at) { $("hStatus").textContent = "give a time"; return; }
+  try {
+    if (editingHistory === null) await call("/api/history", "POST", body);
+    else await call("/api/history/" + editingHistory, "PUT", body);
+    $("hStatus").textContent = editingHistory === null ? "added" : "saved";
+    resetHistoryForm(); loadHistory();
+  } catch (e) { $("hStatus").textContent = "not saved: " + e.message; }
+};
+async function deleteHistory(id) {
+  if (!confirm("Delete this line from the chat history? It cannot be undone.")) return;
+  try { await call("/api/history/" + id, "DELETE"); resetHistoryForm(); loadHistory(); }
+  catch (e) { $("hStatus").textContent = "not deleted: " + e.message; }
+}
+$("hClear").onclick = async () => {
+  if (!confirm("Clear the whole chat history (every squad)? Traces are kept. This cannot be undone.")) return;
+  try { await call("/api/history/clear", "POST", { confirm: "clear history" }); resetHistoryForm(); loadHistory(); $("hStatus").textContent = "history cleared"; }
+  catch (e) { $("hStatus").textContent = "not cleared: " + e.message; }
+};
+$("hPreviewBtn").onclick = async () => {
+  const at = $("hAt").value || nowLocal();
+  try { $("hPreview").textContent = (await api(`/api/history/preview?squad=${enc($("hFormSquad").value)}&until=${enc(at)}`)).text; }
+  catch (e) { $("hPreview").textContent = "cannot show: " + e.message; }
+};
+resetHistoryForm();
+
+// ---- batch tab: a scenario's messages, played through the processor one at a time
+let scenarioMsgs = [];          // [{member, sent_at, text, status, trace}]
+let bState = "idle";            // idle | running | paused
+let bFilter = () => true;
+const dayOf = s => s.slice(0, 10);
+async function loadScenarios() {
+  const list = await api("/api/scenarios");
+  const keep = $("bScenario").value;
+  $("bScenario").innerHTML = list.map(s => `<option value="${esc(s.name)}">${esc(s.name)} (${s.messages} messages, ${s.history} history lines)</option>`).join("");
+  if (keep) $("bScenario").value = keep;
+  if (!list.length) $("bDesc").textContent = "No scenario files in test_cases/scenarios/.";
+  else showScenarioDesc();
+}
+async function showScenarioDesc() {
+  const name = $("bScenario").value;
+  if (!name) return;
+  try { $("bDesc").textContent = (await api("/api/scenarios/" + enc(name))).description || ""; } catch (e) { $("bDesc").textContent = ""; }
+}
+$("bScenario").onchange = showScenarioDesc;
+$("bLoad").onclick = async () => {
+  if (bState === "running") { $("bStatus").textContent = "pause or stop the run first"; return; }
+  const name = $("bScenario").value;
+  if (!name) return;
+  try {
+    const added = await call(`/api/scenarios/${enc(name)}/load-history`, "POST");
+    const s = await api("/api/scenarios/" + enc(name));
+    scenarioMsgs = s.messages.map(m => ({ member: m.member, sent_at: m.sent_at, text: m.text, status: "pending", trace: null }));
+    bState = "idle";
+    $("bStatus").textContent = `added ${added.added} history lines; ${scenarioMsgs.length} messages queued`;
+    drawBatch();
+  } catch (e) { $("bStatus").textContent = "not loaded: " + e.message; }
+};
+const inRange = m => { const from = $("bFrom").value, to = $("bTo").value; const d = dayOf(m.sent_at); return (!from || d >= from) && (!to || d <= to); };
+$("bAll").onclick = () => { bFilter = () => true; runBatch(false); };
+$("bRange").onclick = () => { bFilter = inRange; runBatch(false); };
+$("bDay").onclick = () => {
+  const day = $("bFrom").value;
+  if (!day) { $("bStatus").textContent = "set From to the day to run"; return; }
+  bFilter = m => dayOf(m.sent_at) === day; runBatch(false);
+};
+$("bPause").onclick = () => {
+  if (bState === "running") { bState = "paused"; drawBatch(); }    // the message in progress finishes first
+  else if (bState === "paused") runBatch(false);
+};
+$("bStep").onclick = () => { if (!loopActive) runBatch(true); };
+$("bStop").onclick = () => { bState = "idle"; drawBatch(); };
+$("bReset").onclick = () => { if (bState !== "running") { scenarioMsgs.forEach(m => { m.status = "pending"; m.trace = null; }); drawBatch(); } };
+// One loop at a time. Pausing while a message is in flight and resuming before it finishes just sets the state
+// back to running; the loop already in progress carries on, so no second loop starts.
+let loopActive = false;
+async function runBatch(once) {
+  bState = "running"; drawBatch();
+  if (loopActive) return;
+  loopActive = true;
+  try {
+    while (bState === "running") {
+      const next = scenarioMsgs.find(m => m.status === "pending" && bFilter(m));
+      if (!next) break;
+      await sendBatchItem(next);
+      if (once) { bState = "paused"; break; }
+    }
+    if (bState === "running") bState = "idle";  // finished, or nothing left to run
+  } finally {
+    loopActive = false;
+    drawBatch();
+  }
+}
+async function sendBatchItem(m) {
+  m.status = "sending"; drawBatch();
+  const sender = members.find(x => x.member === m.member);
+  if (!sender) { m.status = "unknown member"; drawBatch(); return; }
+  try {
+    const body = { sender_id: sender.sender_id, text: m.text, sent_at: m.sent_at, live_calendar: $("liveCal").checked };
+    const r = await call("/api/send", "POST", body);
+    m.trace = r.trace_id; rememberText(r.trace_id, m.text); addSessionTrace(r.trace_id);
+    m.status = "running"; drawBatch(); loadTraces();
+    m.status = await waitForTrace(r.trace_id);
+  } catch (e) { m.status = "failed: " + e.message; }
+  drawBatch(); loadTraces();
+}
+// A message is done when its trace leaves the working statuses. Gives up after two minutes.
+async function waitForTrace(id) {
+  for (let i = 0; i < 120; i++) {
+    const t = await api("/api/traces/" + enc(id));
+    if (!WORKING.includes(t.status)) return t.status;
+    await new Promise(res => setTimeout(res, 1000));
+  }
+  return "still working after 2 minutes";
+}
+function drawBatch() {
+  const pending = scenarioMsgs.filter(m => m.status === "pending").length;
+  $("bState").textContent = `${bState} · ${pending} pending of ${scenarioMsgs.length}`;
+  $("bTable").innerHTML = `<tr><th>#</th><th>Sent at (NY)</th><th>From</th><th>Message</th><th>Status</th><th>Trace</th></tr>` +
+    scenarioMsgs.map((m, i) => {
+      const who = members.find(x => x.member === m.member);
+      const active = m.status === "sending" || m.status === "running";
+      return `<tr class="${active ? "cur" : ""}"><td>${i + 1}</td><td>${esc(m.sent_at ? nyTime(m.sent_at) : "")}</td>` +
+        `<td>${who ? esc(who.name) + " · " : ""}${esc(m.member)}</td><td class="txt">${esc(m.text)}</td>` +
+        `<td>${esc(m.status)}</td><td>${m.trace ? `<a href="#" data-trace="${esc(m.trace)}">open</a>` : ""}</td></tr>`;
+    }).join("");
+}
+
+// ---- prompts tab: a prompt is shown with the sample from the latest message of this session that called it
+let lab = null;  // {name, step (null when there is no sample yet), saved}
+function pretty(text) { try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) { return text; } }
+// The temporary model picked in this tab, or null for the model the sample used. Cleared when the prompt loads.
+let labOverride = null;
+const labModel = () => labOverride ? labOverride.model : lab.step.input.model;
+const labOverrideBody = () => labOverride ? { source: labOverride.source, model: labOverride.model, effort: labOverride.effort || null } : null;
+const labBody = () => ({ system: $("labSystem").value, user_template: $("labUser").value, trace_id: lab.step.trace_id,
+                         model: labModel(), max_tokens: lab.step.input.max_tokens, override: labOverrideBody() });
+function labShowModel() {
+  $("labModelName").textContent = labOverride
+    ? `temporary: ${labOverride.source} ${labOverride.model}${labOverride.effort ? " · effort " + labOverride.effort : ""}`
+    : "";
+}
+async function labCall(path, method, body) { return call(path, method, body); }
 async function labRender() {
+  if (!lab || !lab.step) { $("labRendered").textContent = "(needs a sample: send a message that calls this prompt, then come back)"; return; }
   try { $("labRendered").textContent = (await labCall(`/api/prompts/${lab.name}/render`, "POST", labBody())).user; }
   catch (e) { $("labRendered").textContent = "cannot render: " + e.message; }
 }
 function labFill(p) {
   lab.saved = p;
   $("labSystem").value = p.system; $("labUser").value = p.user_template; $("labSchema").textContent = JSON.stringify(p.schema, null, 2);
-  const sent = lab.step.input.prompt_version;
-  $("labMeta").textContent = `model ${lab.step.input.model} · max_tokens ${lab.step.input.max_tokens} · saved version ${p.version}` +
-    (sent === p.version ? "" : ` · this call used version ${sent}: the fields below hold the saved files, the text actually sent is in the section above`);
+  const sent = lab.step ? lab.step.input.prompt_version : null;
+  $("labMeta").textContent = (lab.step ? `model ${lab.step.input.model} · max_tokens ${lab.step.input.max_tokens} · ` : "") + `saved version ${p.version}` +
+    (lab.step && sent !== p.version ? ` · the sample used version ${sent}: the fields below hold the saved files` : "");
   labRender();
+  labUpdateDirty();
 }
-async function openLab(seq) {
-  const step = { ...currentTrace.steps.find(x => x.seq === seq), trace_id: currentTrace.trace_id };
-  lab = { name: step.name.slice(4), step };
-  $("labTitle").textContent = `${step.name} (step ${seq})`;
-  $("labSent").textContent = "SYSTEM\n" + step.input.system + "\n\nUSER\n" + step.input.user;
+// Modified means the system prompt or the user template differs from the saved files.
+function labUpdateDirty() {
+  const dirty = labDirty();
+  $("labSave").disabled = !dirty;
+  $("labBadge").hidden = !dirty;
+}
+function labUpdateEnabled() {
+  const ok = !!(lab && lab.step);
+  for (const id of ["labSend", "labEvalBtn", "labAiGo", "labModelBtn", "labAi"]) $(id).disabled = !ok;
+}
+async function labPersist() {
+  const r = await labCall(`/api/prompts/${lab.name}`, "PUT", { system: $("labSystem").value, user_template: $("labUser").value });
+  labFill(await api("/api/prompts/" + lab.name));
+  return r;
+}
+// The newest message of this session whose trace called this prompt: its input is the sample shown.
+async function findSample(name) {
+  for (const id of (await api("/api/traces")).slice(0, 20).map(t => t.trace_id)) {
+    const t = await api("/api/traces/" + enc(id));
+    const s = t.steps.find(x => x.name === "llm:" + name && x.input);
+    if (s) return { ...s, seq: s.seq, trace_id: t.trace_id };
+  }
+  return null;
+}
+async function loadLab(name, step) {
+  lab = { name, step, saved: null };
+  labOverride = null; labShowModel(); $("labModelPanel").hidden = true;
+  $("pName").value = name;
+  $("labTitle").textContent = step ? `Prompt Lab · ${step.name} (step ${step.seq})` : `Prompt Lab · ${name}`;
+  $("pSample").textContent = step ? `sample: trace ${step.trace_id} · model ${step.input.model}`
+    : "no sample yet: send a message in this session that calls this prompt";
+  labRuns = []; labPage = -1; labPager();  // a new prompt starts with no runs; leaving the tab loses them
+  $("labSent").textContent = step ? "## SYSTEM\n" + step.input.system + "\n\n## USER\n" + step.input.user : "(no sample yet)";
   $("labResult").textContent = ""; $("labStatus").textContent = ""; aiReset();
-  const out = step.output;  // the response this call actually got
-  $("labOriginal").textContent = out ? pretty(out.response) : "(this call failed, so there was no response)";
-  $("labOrigMeta").textContent = out ? `${out.stop_reason} · ${out.input_tokens} in / ${out.output_tokens} out · $${out.cost_usd} · ${out.latency_ms} ms` : "";
-  try { labFill(await api("/api/prompts/" + lab.name)); } catch (e) { $("labStatus").textContent = "cannot load prompt: " + e.message; }
-  $("lab").showModal();
+  const out = step && step.output;  // the response the sample call got
+  $("labOriginal").textContent = !step ? "(no sample)" : out ? pretty(out.response) : "(this call failed, so there was no response)";
+  $("labOrigMeta").textContent = out ? `${step.input.model} · effort ${step.input.effort || "none"} · ${out.stop_reason} · ${out.input_tokens} in / ${out.output_tokens} out · $${out.cost_usd} · ${out.latency_ms} ms` : "";
+  labUpdateEnabled();
+  try { labFill(await api("/api/prompts/" + name)); } catch (e) { $("labStatus").textContent = "cannot load prompt: " + e.message; }
+}
+async function pickPrompt() {
+  const name = $("pName").value;
+  await loadLab(name, await findSample(name));
+}
+$("pName").onchange = async () => {
+  if (labDirty() && !confirm("Discard the unsaved changes to this prompt?")) { $("pName").value = lab.name; return; }
+  await pickPrompt();
+};
+async function openLab(seq) {
+  if (labDirty() && !confirm("Discard the unsaved prompt changes and open this step's prompt?")) return;
+  const step = { ...currentTrace.steps.find(x => x.seq === seq), trace_id: currentTrace.trace_id };
+  await loadLab(step.name.slice(4), step);
+  showTab("prompts");
 }
 let labTimer;
-$("labUser").oninput = () => { clearTimeout(labTimer); labTimer = setTimeout(labRender, 400); };
-$("labClose").onclick = () => $("lab").close();
-$("labReset").onclick = () => labFill(lab.saved);
+$("labUser").oninput = () => { clearTimeout(labTimer); labTimer = setTimeout(labRender, 400); labUpdateDirty(); };
+$("labSystem").oninput = labUpdateDirty;
+$("labClose").onclick = () => showTab("trace");
+
+// ---- temporary model for this tab
+$("labModelBtn").onclick = async () => {
+  await llmLoadModels().catch(() => {});
+  const cur = labOverride || { source: lab.step.input.source || "anthropic", model: lab.step.input.model, effort: lab.step.input.effort || "" };
+  $("labModelSource").value = cur.source; setTempModel(cur.source, cur.model);
+  $("labModelEffort").innerHTML = effortOptions(cur.source, cur.effort); $("labModelStatus").textContent = "";
+  refreshTempCaps();
+  $("labModelPanel").hidden = !$("labModelPanel").hidden;
+};
+$("labModelSource").onchange = () => {
+  setTempModel($("labModelSource").value, "");
+  $("labModelEffort").innerHTML = effortOptions($("labModelSource").value, "");
+  refreshTempCaps();
+};
+function setTempModel(source, value) {
+  $("labModelWrap").innerHTML = modelControl(source, value, 'id="labModelId"');
+  bindModel($("labModelId"), refreshTempCaps);
+  refreshTempCaps();
+}
+function refreshTempCaps() {
+  showCaps($("labModelSource").value, $("labModelId").value.trim(), $("labModelCaps"), $("labModelEffort"));
+}
+$("labModelApply").onclick = () => {
+  const model = $("labModelId").value.trim();
+  if (!model) { $("labModelStatus").textContent = "enter a model"; return; }
+  const effort = $("labModelEffort").disabled ? null : ($("labModelEffort").value || null);
+  labOverride = { source: $("labModelSource").value, model, effort };
+  labShowModel(); $("labModelStatus").textContent = "using this model for this tab";
+};
+$("labModelClear").onclick = () => { labOverride = null; labShowModel(); $("labModelStatus").textContent = "back to the configured model"; };
+$("labModelHide").onclick = () => { $("labModelPanel").hidden = true; };
+$("labReset").onclick = () => { labFill(lab.saved); $("labStatus").textContent = "reset to the saved files"; };
+// Leaving the tab with unsaved changes: save them, discard them, or stay.
+$("unsavedYes").onclick = async () => {
+  try { await labPersist(); }
+  catch (e) { $("unsavedDlg").close(); pendingTab = null; $("labStatus").textContent = "save failed, changes kept: " + e.message; return; }
+  const t = pendingTab; pendingTab = null; $("unsavedDlg").close(); if (t) setTab(t);
+};
+$("unsavedNo").onclick = () => {
+  labFill(lab.saved);
+  const t = pendingTab; pendingTab = null; $("unsavedDlg").close(); if (t) setTab(t);
+};
+$("unsavedStay").onclick = () => { pendingTab = null; $("unsavedDlg").close(); };
+$("unsavedDlg").addEventListener("cancel", e => { e.preventDefault(); $("unsavedStay").click(); });
+
+// Every Send in this tab is kept in memory until the prompt changes: the prompt as it was sent, the result and its stats.
+let labRuns = [], labPage = -1;
+function labStats(r) {
+  return `${r.model} · effort ${r.effort || "none"} · ${r.stop_reason} · ${r.input_tokens} in / ${r.output_tokens} out · $${r.cost_usd} · ${r.latency_ms} ms`;
+}
+function labShowRun(i) {
+  labPage = i;
+  const run = labRuns[i];
+  $("labSystem").value = run.system; $("labUser").value = run.user_template;
+  $("labResult").textContent = run.text; $("labStatus").textContent = run.stats;
+  labRender(); labUpdateDirty(); labPager();
+}
+function labPager() {
+  const n = labRuns.length;
+  $("labPage").textContent = n ? `Page ${labPage + 1} of ${n}` : "No runs yet";
+  $("labPrev").disabled = labPage <= 0;
+  $("labNext").disabled = labPage >= n - 1;
+}
+$("labPrev").onclick = () => labShowRun(labPage - 1);
+$("labNext").onclick = () => labShowRun(labPage + 1);
 $("labSend").onclick = async () => {
   $("labSend").disabled = true; $("labStatus").textContent = "sending..."; $("labResult").textContent = "";
+  const sent = { system: $("labSystem").value, user_template: $("labUser").value };  // what this run used, even if edited later
+  let run;
   try {
     const r = await labCall(`/api/prompts/${lab.name}/try`, "POST", labBody());
-    if (r.error) { $("labStatus").textContent = "model call failed"; $("labResult").textContent = r.error; return; }
-    $("labStatus").textContent = `${r.model} · ${r.stop_reason} · ${r.input_tokens} in / ${r.output_tokens} out · $${r.cost_usd} · ${r.latency_ms} ms`;
-    $("labResult").textContent = pretty(r.text);
-  } catch (e) { $("labStatus").textContent = "failed: " + e.message; }
-  finally { $("labSend").disabled = false; }
+    run = r.error ? { text: r.error, stats: "model call failed" } : { text: pretty(r.text), stats: labStats(r) };
+  } catch (e) { run = { text: "", stats: "failed: " + e.message }; }
+  finally { labUpdateEnabled(); }
+  labRuns.push({ ...sent, ...run });
+  labShowRun(labRuns.length - 1);
 };
 // ---- labeled examples: score one system prompt, or compare two
-const evalBody = systems => ({ user_template: $("labUser").value, model: lab.step.input.model, max_tokens: lab.step.input.max_tokens, systems });
+const evalBody = systems => ({ user_template: $("labUser").value, model: labModel(), max_tokens: lab.step.input.max_tokens, systems, override: labOverrideBody() });
 function summaryText(label, s) {
   const c = s.counts, extra = ["fail", "miss", "extra", "error"].filter(k => c[k]).map(k => `${c[k]} ${k === "miss" ? "missed schedule changes" : k === "extra" ? "needlessly passed on" : k}`);
   return `${label}: ${s.passed}/${s.scored} passed` + (extra.length ? ` (${extra.join(", ")})` : "") + (s.dates_scored || s.dates_none ? ` · dates right ${s.dates_ok}/${s.dates_scored} when named (${s.dates_none} named none)` : "") + ` · $${s.cost_usd}`;
@@ -261,7 +814,7 @@ async function runEval(systems, status, body) {
 $("labEvalBtn").onclick = async () => {
   $("labEval").hidden = false; $("labEvalBtn").disabled = true;
   await runEval([{ label: "this prompt", system: $("labSystem").value }], $("labEvalStatus"), $("labEvalBody"));
-  $("labEvalBtn").disabled = false;
+  labUpdateEnabled();
 };
 
 // AI-assisted refinement: ask for a better system prompt, then accept or reject it
@@ -279,7 +832,7 @@ $("labAiGo").onclick = async () => {
   const latest = $("labResult").textContent.trim() ? $("labResult").textContent : $("labOriginal").textContent;  // the newest response shown
   try {
     const r = await labCall(`/api/prompts/${lab.name}/refine`, "POST", { system: $("labSystem").value,
-      user: $("labRendered").textContent, response: latest, hints: $("labHints").value, model: lab.step.input.model });
+      user: $("labRendered").textContent, response: latest, hints: $("labHints").value, model: labModel(), override: labOverrideBody(), max_tokens: Number($("labAiMax").value) || 4096 });
     if (r.error) { $("labAiStatus").textContent = "model call failed: " + r.error; return; }
     aiProposed = r.system_prompt;
     $("labAiWhy").textContent = r.explanation; $("labAiProposed").textContent = r.system_prompt;
@@ -292,40 +845,219 @@ $("labAiGo").onclick = async () => {
                     $("labAiEvalStatus"), $("labAiEvalBody"));
     }
   } catch (e) { $("labAiStatus").textContent = "failed: " + e.message; }
-  finally { $("labAiGo").disabled = false; }
+  finally { labUpdateEnabled(); }
 };
 $("labAiAccept").onclick = () => {
-  aiBefore = $("labSystem").value; $("labSystem").value = aiProposed;
+  aiBefore = $("labSystem").value; $("labSystem").value = aiProposed; labUpdateDirty();
   $("labAiResult").hidden = true; $("labAiUndo").hidden = false;
   $("labAiStatus").textContent = "accepted: the system prompt above is replaced (not saved yet). Press Send to try it.";
 };
 $("labAiReject").onclick = () => { $("labAiResult").hidden = true; $("labAiStatus").textContent = "rejected: the system prompt is unchanged"; };
 $("labAiUndo").onclick = () => {
-  $("labSystem").value = aiBefore; $("labAiUndo").hidden = true; $("labAiStatus").textContent = "restored the system prompt from before the suggestion";
+  $("labSystem").value = aiBefore; labUpdateDirty(); $("labAiUndo").hidden = true; $("labAiStatus").textContent = "restored the system prompt from before the suggestion";
 };
 $("labSave").onclick = async () => {
+  if (!labDirty()) return;
   if (!confirm(`Save to prompts/${lab.name}/? Every later message, including live GroupMe traffic, will use it.`)) return;
   try {
-    const r = await labCall(`/api/prompts/${lab.name}`, "PUT", { system: $("labSystem").value, user_template: $("labUser").value });
-    labFill(await api("/api/prompts/" + lab.name)); $("labStatus").textContent = `saved, new version ${r.version}`;
+    const r = await labPersist();
+    $("labStatus").textContent = `saved, new version ${r.version}`;
   } catch (e) { $("labStatus").textContent = "save failed: " + e.message; }
 };
 
+// ---- LLM settings panel: edits config/llm.toml (developer mode only)
+let llmModels = null;
+async function llmLoadModels() {
+  if (!llmModels) {
+    llmModels = await api("/api/llm-models");
+    const errors = [llmModels.anthropic_error, llmModels.openrouter_error].filter(Boolean);
+    if (errors.length) $("llmStatus").textContent = errors.join(" · ");
+  }
+  $("dl-anthropic").innerHTML = llmModels.anthropic.map(m => `<option value="${esc(m)}">`).join("");
+  $("dl-openrouter").innerHTML = llmModels.openrouter.map(m => `<option value="${esc(m)}">`).join("");
+}
+function llmExtraRow(k, v) {
+  return `<div class="row" data-extra-row><input data-ek placeholder="name" value="${esc(k)}" style="width:12rem"> = ` +
+    `<input data-ev placeholder="value: a number, true/false, or text" value="${esc(typeof v === "string" ? v : JSON.stringify(v))}" style="width:16rem">` +
+    ` <button type="button" data-remove-extra>Remove</button></div>`;
+}
+function llmRow(part, s) {
+  const extra = Object.entries(s.extra || {});
+  return `<div data-part="${part}">` +
+    `<label>Source <select data-k="source">${["anthropic", "openrouter"].map(x => `<option ${x === s.source ? "selected" : ""}>${x}</option>`).join("")}</select></label>` +
+    `<label>Model <span class="status">${(s.source || "anthropic") === "anthropic" ? "pick from the list" : "type to filter, or scroll"}</span>` +
+    `<span data-model>${modelControl(s.source || "anthropic", s.model || "", 'data-k="model"')}</span></label>` +
+    `<label>Effort <span class="status">choices follow the source</span><select data-k="effort">${effortOptions(s.source, s.effort)}</select></label>` +
+    `<div class="status" data-caps></div>` +
+    `<label>Max tokens <input type="number" data-k="max_tokens" min="1" max="8192" value="${s.max_tokens || ""}"></label>` +
+    `<label>Extra parameters <span class="status">OpenRouter only: name and value, as the model's documentation describes</span></label>` +
+    `<div data-extra>${extra.map(([k, v]) => llmExtraRow(k, v)).join("")}</div>` +
+    `<button type="button" data-add-extra>Add parameter</button></div>`;
+}
+function llmRender(cfg) {
+  let html = "";
+  for (const name of ["intent", "tier1"]) {
+    const c = cfg.components[name];
+    if (!c) { html += `<div class="step"><b>${name}</b> not configured (its step is skipped)</div>`; continue; }
+    html += `<div class="step"><b>${name}</b>${llmRow(name, c)}` +
+      `<label><input type="checkbox" data-escalate-on="${name}" ${c.escalate ? "checked" : ""} style="width:auto"> Escalate to a stronger model in the 0.5 to 0.9 confidence band (once per message)</label>` +
+      `<div data-escalate="${name}" ${c.escalate ? "" : "hidden"}>` +
+      llmRow(name + "-esc", c.escalate || { source: "anthropic", model: "claude-sonnet-5-5", max_tokens: 2048, effort: "high" }) + `</div></div>`;
+  }
+  const b = cfg.budget;
+  html += `<div class="step"><b>Budget</b>` +
+    `<label>Per message, USD <input type="number" step="0.01" min="0" data-budget="per_message_usd" value="${b.per_message_usd}"></label>` +
+    `<label>Per day, USD <input type="number" step="0.01" min="0" data-budget="per_day_usd" value="${b.per_day_usd}"></label>` +
+    `<label><input type="checkbox" data-budget="kill_switch" ${b.kill_switch ? "checked" : ""} style="width:auto"> Kill switch (refuse every model call)</label></div>`;
+  $("llmForm").innerHTML = html;
+  document.querySelectorAll("#llmForm select[data-k='source']").forEach(sel => sel.onchange = () => {
+    const part = sel.closest("[data-part]");
+    part.querySelector("[data-model]").innerHTML = modelControl(sel.value, "", 'data-k="model"');
+    bindModel(part.querySelector("[data-k='model']"), () => refreshPart(part));
+    part.querySelector("select[data-k='effort']").innerHTML = effortOptions(sel.value, "");
+    refreshPart(part);
+  });
+  document.querySelectorAll("#llmForm [data-part]").forEach(part => {
+    bindModel(part.querySelector("[data-k='model']"), () => refreshPart(part));
+    refreshPart(part);
+  });
+  document.querySelectorAll("#llmForm [data-escalate-on]").forEach(cb => cb.onchange = () => {
+    document.querySelector(`#llmForm [data-escalate='${cb.dataset.escalateOn}']`).hidden = !cb.checked; });
+  document.querySelectorAll("#llmForm [data-add-extra]").forEach(btn => btn.onclick = () => {
+    btn.previousElementSibling.insertAdjacentHTML("beforeend", llmExtraRow("", "")); });
+  document.querySelectorAll("#llmForm [data-remove-extra]").forEach(btn => btn.onclick = () => btn.closest("[data-extra-row]").remove());
+}
+// Effort choices depend on the source. OpenRouter effort is sent as the model's reasoning setting.
+const EFFORT_LEVELS = {
+  anthropic: ["", "low", "medium", "high", "max"],
+  openrouter: ["", "none", "minimal", "low", "medium", "high", "xhigh"],
+};
+function effortOptions(source, current) {
+  return (EFFORT_LEVELS[source] || EFFORT_LEVELS.anthropic).map(e =>
+    `<option value="${e}" ${e === (current || "") ? "selected" : ""}>${e || "(none)"}</option>`).join("");
+}
+// Anthropic models are a dropdown, so the whole list is visible. OpenRouter's list is long, so it is a
+// text box with suggestions (type to filter). Both report their value through the same selector.
+function modelControl(source, value, attrs) {
+  if (source === "anthropic") {
+    const ids = llmModels ? [...llmModels.anthropic] : [];
+    if (value && !ids.includes(value)) ids.unshift(value);
+    return `<select ${attrs}>${ids.map(id => `<option ${id === value ? "selected" : ""}>${esc(id)}</option>`).join("")}</select>`;
+  }
+  return `<input ${attrs} list="dl-openrouter" value="${esc(value || "")}">`;
+}
+function bindModel(el, fn) {
+  el.oninput = fn;
+  el.onchange = fn;
+}
+// The model's capabilities come from the OpenRouter model list. Anthropic's effort choices are fixed above.
+function showCaps(source, model, capsEl, effortEl) {
+  if (source !== "openrouter" || !llmModels || !llmModels.openrouter_params) { capsEl.textContent = ""; effortEl.disabled = false; return; }
+  const params = llmModels.openrouter_params[model];
+  if (!params) { capsEl.textContent = "not in the OpenRouter model list: capabilities unknown"; effortEl.disabled = false; return; }
+  const reasoning = params.includes("reasoning");
+  capsEl.innerHTML = "<b>Supported parameters:</b> " + params.map(p => p === "reasoning" ? `<b>${esc(p)}</b>` : esc(p)).join(", ") +
+    (reasoning ? "" : " · no reasoning parameter, so effort is not sent");
+  effortEl.disabled = !reasoning;
+}
+function refreshPart(part) {
+  showCaps(part.querySelector("select[data-k='source']").value, part.querySelector("[data-k='model']").value.trim(),
+           part.querySelector("[data-caps]"), part.querySelector("select[data-k='effort']"));
+}
+function llmReadSettings(part) {
+  const get = k => part.querySelector(`[data-k='${k}']`).value;
+  const extra = {};
+  part.querySelectorAll("[data-extra-row]").forEach(row => {
+    const k = row.querySelector("[data-ek]").value.trim(); if (!k) return;
+    const raw = row.querySelector("[data-ev]").value;
+    try { extra[k] = JSON.parse(raw); } catch (e) { extra[k] = raw; }
+  });
+  const out = { source: get("source"), model: get("model").trim(), max_tokens: Number(get("max_tokens")) };
+  if (get("effort") && !part.querySelector("[data-k='effort']").disabled) out.effort = get("effort");
+  if (Object.keys(extra).length) out.extra = extra;
+  return out;
+}
+function llmBody() {
+  const body = { components: {} };
+  for (const name of ["intent", "tier1"]) {
+    const part = document.querySelector(`#llmForm [data-part='${name}']`);
+    if (!part) continue;
+    body.components[name] = llmReadSettings(part);
+    const on = document.querySelector(`#llmForm [data-escalate-on='${name}']`);
+    if (on && on.checked) body.components[name].escalate = llmReadSettings(document.querySelector(`#llmForm [data-part='${name}-esc']`));
+  }
+  const num = k => Number(document.querySelector(`#llmForm [data-budget='${k}']`).value);
+  body.budget = { per_message_usd: num("per_message_usd"), per_day_usd: num("per_day_usd"),
+                  kill_switch: document.querySelector("#llmForm [data-budget='kill_switch']").checked };
+  return body;
+}
+async function llmReload() {
+  try { llmRender(await api("/api/llm-config")); $("llmStatus").textContent = "loaded from the file"; }
+  catch (e) { $("llmStatus").textContent = "cannot load the config: " + e.message; }
+}
+$("llmBtn").onclick = async () => { await llmLoadModels().catch(() => {}); await llmReload(); $("llmDlg").showModal(); };
+$("llmClose").onclick = () => $("llmDlg").close();
+$("llmReload").onclick = llmReload;
+$("llmSave").onclick = async () => {
+  if (!confirm("Save config/llm.toml? The next message will use these settings. Comments in the file are not kept.")) return;
+  try {
+    await labCall("/api/llm-config", "PUT", llmBody());
+    $("llmStatus").textContent = "saved";
+    loadStatus();
+  } catch (e) { $("llmStatus").textContent = "not saved: " + e.message; }
+};
+
+// ---- composer: one message through the processor
 $("send").onclick = async () => {
   if ($("send").disabled) return;  // one click, one message
   $("send").disabled = true;
-  const body = { sender_id: $("sender").value, text: $("text").value };
+  const body = { sender_id: $("sender").value, text: $("text").value, live_calendar: $("liveCal").checked };
   if ($("when").value) body.sent_at = $("when").value;
   try {
-    const r = await api("/api/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await call("/api/send", "POST", body);
     $("result").textContent = "processor: " + r.status;
-    selected = r.trace_id; rememberText(r.trace_id, body.text); $("text").value = "";
+    selected = r.trace_id; rememberText(r.trace_id, body.text); addSessionTrace(r.trace_id); $("text").value = "";
+    tracePage = 0;
+    startPolling();  // the message is now being processed: refresh until it finishes
     loadTraces(); loadDetail();
   } catch (e) { $("result").textContent = "failed: " + e.message; }
   finally { $("send").disabled = false; }
 };
-loadMembers(); loadTraces(); loadStatus();
-setInterval(() => { loadTraces(); loadDetail(); loadStatus(); }, 2000);
+loadMembers().then(() => { loadTraces(); }); loadStatus(); loadScenarios(); drawBatch();
+// The page refreshes every 2 seconds only while a trace is still being processed. It stops when the trace
+// reaches a final status, and it gives up after 2 minutes (a stuck trace should not poll forever).
+const WORKING = ["received", "enqueued"];
+const isWorking = t => !!t && WORKING.includes(t.status);
+const POLL_MS = 2000, POLL_LIMIT = 60;
+let pollTimer = null, pollTicks = 0;
+function startPolling() {
+  if (pollTimer) return;
+  pollTicks = 0;
+  pollTimer = setInterval(pollTick, POLL_MS);
+}
+function stopPolling() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+async function pollTick() {
+  pollTicks += 1;
+  await loadTraces();
+  await loadDetail();
+  if (!isWorking(currentTrace) || pollTicks >= POLL_LIMIT) stopPolling();
+}
+$("refresh").onclick = () => { loadTraces(); loadDetail(); loadStatus(); };
+// Empties the TEST database: every trace, outbox row and chat history row. Production cannot be cleared from here.
+$("clearData").onclick = async () => {
+  if (!confirm("Clear ALL test data? Every trace, reply and chat-history row in the test database will be deleted. This cannot be undone.")) return;
+  try {
+    await call("/api/clear", "POST", { confirm: "clear test data" });
+    sessionStorage.removeItem(sessionKey); localStorage.removeItem(sentKey);
+    selected = null; currentTrace = null; stopPolling(); drawnOut = "";
+    $("out").innerHTML = `<span class="status">Send a message to see what it did.</span>`;
+    $("detail").innerHTML = "Cleared. Select a trace, or send a message."; loadTraces();
+    if (activeTab === "history") loadHistory();
+  } catch (e) { alert("not cleared: " + e.message); }
+};
 </script>
 </body>
 </html>

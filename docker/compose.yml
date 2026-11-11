@@ -4,7 +4,8 @@ x-app: &app
     context: ..
     dockerfile: docker/Dockerfile
   environment: &env
-    TRACE_DB_PATH: /data/trace.db
+    DATABASE_URL: postgresql://chatbot:local@postgres:5432/chatbot_test  # test database; prod is chatbot_prod
+    TRACE_DB_PATH: /data/trace.db  # replaced by DATABASE_URL in the Postgres stages
     QUEUE_URL: http://queue:9324/000000000000/chatbot-events
     SQS_ENDPOINT_URL: http://queue:9324
     AWS_ACCESS_KEY_ID: local
@@ -17,6 +18,24 @@ x-app: &app
     - ../config/roster.local.csv:/roster/roster.csv:ro
 
 services:
+  # One Postgres server with two databases: chatbot_test (what the stack uses now) and chatbot_prod.
+  # Local development only: the credentials are placeholders. The data lives in the pg-data volume.
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: local
+      POSTGRES_DB: chatbot_test
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"  # so the test suite and tools on the Mac can reach it
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbot_test"]
+      interval: 2s
+      retries: 30
+
   queue:
     image: softwaremill/elasticmq-native:1.6.11
     ports:
@@ -30,7 +49,9 @@ services:
     command: uvicorn chatbot.ingest.app:create_app --factory --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
-    depends_on: [queue]
+    depends_on:
+      postgres: {condition: service_healthy}
+      queue: {condition: service_started}
 
   agent:
     <<: *app
@@ -48,7 +69,9 @@ services:
       PROMPT_LAB: "1"  # lets the replay tool try edited prompts through this container; remove to switch off
     expose: ["8002"]   # internal only: not published to the host
     command: python -m chatbot.agent
-    depends_on: [queue]
+    depends_on:
+      postgres: {condition: service_healthy}
+      queue: {condition: service_started}
 
   # A stand-in for the calendar service. Start it with:  docker compose -f docker/compose.yml --profile fake-calendar up -d
   # then set CALENDAR_BASE_URL=http://calendar:8080 in .env. Never needed once you point at the mirror.
@@ -65,16 +88,20 @@ services:
       <<: *env
       AGENT_URL: http://agent:8002
       TEST_CASES_PATH: /app/test_cases/labeled_examples.csv
+      SCENARIOS_PATH: /app/test_cases/scenarios
     volumes:
       - trace-data:/data
       - ../config/roster.local.csv:/roster/roster.csv:ro
-      - ../config:/app/config:ro  # shows the live policy mode
+      - ../config:/app/config  # writable: the LLM settings panel saves llm.toml here (developer mode only)
       - ../prompts:/app/prompts  # writable: the prompt editor saves here
       - ../test_cases:/app/test_cases:ro  # labeled examples for scoring a prompt
     command: uvicorn chatbot.replay.app:create_app --factory --host 0.0.0.0 --port 8001
     ports:
       - "8001:8001"
-    depends_on: [ingest]
+    depends_on:
+      postgres: {condition: service_healthy}
+      ingest: {condition: service_started}
 
 volumes:
+  pg-data:
   trace-data:

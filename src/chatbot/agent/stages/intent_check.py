@@ -14,12 +14,12 @@ class IntentCheck(Stage):
     fail_open = True
 
     def applies(self, ctx):
-        return bool(ctx.config.intent_model)
+        return ctx.llm.has("intent")
 
     def run(self, ctx, step):
         prompt = load_prompt("intent")
-        user = interpret.build_user_message(ctx.event, prompt)
-        result = ctx.llm.complete("intent", prompt, user, ctx.config.intent_model, ctx.config.intent_max_tokens)
+        user = interpret.build_user_message(ctx.event, prompt, history=ctx.history)
+        result = ctx.llm.complete("intent", prompt, user)
         verdict = intent.parse(result.text)
         skip = intent.should_skip(verdict, ctx.config.intent_skip_confidence)
         ctx.intent = verdict

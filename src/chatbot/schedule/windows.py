@@ -10,9 +10,10 @@ previous shift date, so it is shifted by 24 hours.
 Nights run 1800-0600 every day; days run 0600-1800 on Saturday and Sunday only.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 DAY_START = 360  # 0600
+NIGHT_START = 1080  # 1800
 MINUTES_PER_DAY = 1440
 Interval = tuple[int, int]
 
@@ -82,3 +83,33 @@ def valid_windows(shift_date: date) -> list[Interval]:
 
 def within(windows: list[Interval], target: Interval) -> bool:
     return any(s <= target[0] and target[1] <= e for s, e in windows)
+
+
+def split_span(shift_date: date, start: str, end: str, end_date: str = "") -> list[tuple[date, str, str]]:
+    """Cut a change into one piece per shift, as (shift date, start, end).
+
+    The span runs from `start` on `shift_date` to `end` (on `end_date` when given, otherwise the same shift).
+    Shifts meet at 0600 and 1800, so the span is cut at each of those times it passes. A span inside one shift
+    comes back as one piece. Raises ValueError if the times cannot be read or the end is not after the start.
+    """
+    if end_date:
+        s = op_minute(clock_minutes(start))
+        e = (date.fromisoformat(end_date) - shift_date).days * MINUTES_PER_DAY + op_minute(clock_minutes(end))
+        if e <= s:
+            raise ValueError(f"end {end_date} {end} is not after start {start}")
+    else:
+        s, e = interval(start, end)
+    cuts = []
+    for day in range(s // MINUTES_PER_DAY - 1, e // MINUTES_PER_DAY + 2):
+        for boundary in (day * MINUTES_PER_DAY + DAY_START, day * MINUTES_PER_DAY + NIGHT_START):
+            if s < boundary < e:
+                cuts.append(boundary)
+    points = [s, *sorted(cuts), e]
+    return [_piece(shift_date, a, b) for a, b in zip(points, points[1:])]
+
+
+def _piece(base: date, a: int, b: int) -> tuple[date, str, str]:
+    """A piece's shift date comes from its start: before 0600 it belongs to the previous date's shift."""
+    day, minute = divmod(a, MINUTES_PER_DAY)
+    shift_day = day if minute >= DAY_START else day - 1
+    return base + timedelta(days=shift_day), to_hhmm(a), to_hhmm(b)

@@ -46,6 +46,24 @@ def test_plain_chatter_without_schedule_signal_is_dropped(pii):
     assert r.outcome is Outcome.DROPPED and r.reason == "no_schedule_signal"
 
 
+def test_chatter_is_kept_as_history_when_signal_is_not_required(pii):
+    r = pii.apply("Great job everyone at the training", require_signal=False)
+    assert r.allowed and r.text == "Great job everyone at the training"
+
+
+def test_call_details_are_removed_and_chatter_kept(pii):
+    r = pii.apply("Pt is a 72 yo male with chest pain. Sorry about that, we are covered now", require_signal=False)
+    assert r.allowed
+    assert "72" not in r.text and "chest" not in r.text
+    assert "covered now" in r.text
+
+
+def test_message_that_is_only_call_details_is_dropped_even_without_signal_check(pii):
+    r = pii.apply("Pt is a 72 yo male with chest pain", require_signal=False)
+    assert r.outcome is Outcome.DROPPED and r.text is None
+    assert r.reason == "only_call_details"
+
+
 def test_residual_long_number_is_uncertain(pii):
     r = pii.apply("54 crew tonight ref 99887766")
     assert r.outcome is Outcome.UNCERTAIN and r.text is None
