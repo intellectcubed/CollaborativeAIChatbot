@@ -14,13 +14,14 @@ import logging
 from dataclasses import dataclass, field
 
 from chatbot.agent.dates import Resolution
+from chatbot.agent.history import NO_HISTORY
 from chatbot.agent.interpret import Interpretation
 from chatbot.agent.intent import IntentResult
 from chatbot.agent.plan import PlannedAction
 from chatbot.agent.schedule_info import ScheduleInfo
 from chatbot.channels import Channels
 from chatbot.interfaces.llm import is_transient as _llm_transient
-from chatbot.interfaces.traced_llm import BoundLlm
+from chatbot.interfaces.llm_manager import BoundLlm
 from chatbot.models import Event
 from chatbot.policy import Policy
 from chatbot.schedule.client import Calendar, CalendarUnavailable
@@ -38,11 +39,9 @@ def is_transient(exc: Exception) -> bool:
 
 @dataclass(frozen=True)
 class AgentConfig:
-    model: str = "claude-haiku-5-5"
-    intent_model: str | None = None  # None switches the intent check off
+    """Pipeline settings. Which model each component uses is in config/llm.toml, not here."""
+
     intent_skip_confidence: float = 0.8
-    max_tokens: int = 2048
-    intent_max_tokens: int = 1024
 
 
 @dataclass
@@ -55,6 +54,7 @@ class Context:
     config: AgentConfig
     intent: IntentResult | None = None
     dates: Resolution | None = None  # dates worked out from the intent step's date words; None: not extracted
+    history: str = NO_HISTORY  # the squad's recent chat, rendered for the prompt (agent/history.py)
     schedule: ScheduleInfo | None = None  # the calendar on those dates; None: not looked up
     short_circuit: bool = False  # the schedule lookup already has a question for the sender: skip Tier 1
     interpretation: Interpretation | None = None

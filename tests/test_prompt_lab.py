@@ -11,7 +11,7 @@ from chatbot.interfaces.llm import StubLlm
 from chatbot.prompts import load_prompt
 from chatbot.replay.app import create_app as create_replay
 from chatbot.tracing.store import TraceStore
-from tests.fakes import FakeLlm, intent_reply
+from tests.fakes import FakeLlm, intent_reply, make_manager
 
 REAL_PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -109,23 +109,26 @@ def test_render_with_a_bad_template_is_422(stack):
     assert client.post("/api/prompts/intent/render", json={**BODY, "user_template": "{nope}"}).status_code == 422
 
 
-def test_lab_endpoint_calls_the_model_client(monkeypatch):
+def test_lab_endpoint_calls_the_model_client(tmp_path):
     llm = FakeLlm(intent_reply(False))
-    client = TestClient(lab.create_app(llm))
+    manager = make_manager(tmp_path, llm)
+    client = TestClient(lab.create_app(manager))
     r = client.post("/complete", json={"system": "s", "user": "u", "schema": {"type": "object"}, "model": "claude-haiku-5-5", "max_tokens": 50})
     assert r.status_code == 200 and r.json()["text"] and llm.calls[0]["user"] == "u"
+    [lab_trace] = [t for t in manager.store.list_traces(include_lab=True) if t["source"] == "lab"]
+    assert [s["name"] for s in manager.store.get_trace(lab_trace["trace_id"])["steps"]] == ["llm:lab"]
 
 
-def test_lab_endpoint_limits_the_model_and_tokens():
-    client = TestClient(lab.create_app(StubLlm()))
+def test_lab_endpoint_limits_the_model_and_tokens(tmp_path):
+    client = TestClient(lab.create_app(make_manager(tmp_path, StubLlm())))
     base = {"system": "s", "user": "u", "schema": {}, "max_tokens": 50}
     assert client.post("/complete", json={**base, "model": "some-expensive-model"}).status_code == 422
     assert client.post("/complete", json={**base, "model": "claude-haiku-5-5", "max_tokens": 10**6}).status_code == 422
 
 
-def test_lab_is_off_unless_enabled(monkeypatch):
+def test_lab_is_off_unless_enabled(monkeypatch, tmp_path):
     monkeypatch.delenv("PROMPT_LAB", raising=False)
-    assert lab.start_if_enabled(StubLlm()) is False
+    assert lab.start_if_enabled(make_manager(tmp_path, StubLlm())) is False
 
 
 # ---- AI-assisted refinement
@@ -214,3 +217,33 @@ def test_the_committed_template_only_uses_known_fields():
     text = (REAL_PROMPTS / "prompt_refinement.md").read_text()
     fields = set(re.findall(r"\{\{(\w+)\}\}", text))
     assert fields == {"prompt_name", "model", "system_prompt", "user_message", "response_schema", "response", "hints"}
+
+
+def test_a_temporary_model_is_used_for_this_call_only(stack):
+    client, sent, _ = stack
+    body = {**BODY, "override": {"source": "openrouter", "model": "openai/gpt-4o", "effort": None}}
+    assert client.post("/api/prompts/intent/try", json=body).status_code == 200
+    assert sent[-1]["model"] == "openai/gpt-4o" and sent[-1]["source"] == "openrouter" and sent[-1]["extra"] == {}
+    client.post("/api/prompts/intent/try", json=BODY)  # no override: the saved config decides
+    assert sent[-1]["model"] == BODY["model"] and sent[-1]["source"] == "anthropic"
+
+
+def test_a_temporary_model_must_name_a_known_source(stack):
+    client, _, _ = stack
+    body = {**BODY, "override": {"source": "openai", "model": "x"}}
+    assert client.post("/api/prompts/intent/try", json=body).status_code == 422
+
+
+def test_the_agent_lists_anthropic_models_for_the_replay_tool(tmp_path):
+    from types import SimpleNamespace
+    from chatbot.interfaces.llm import AnthropicClient
+
+    class Models:
+        def list(self):
+            return [SimpleNamespace(id="claude-b"), SimpleNamespace(id="claude-a")]
+
+    sdk = SimpleNamespace(models=Models())
+    client = TestClient(lab.create_app(make_manager(tmp_path, AnthropicClient(client=sdk))))
+    assert client.get("/models/anthropic").json() == {"models": ["claude-a", "claude-b"]}
+    stub = TestClient(lab.create_app(make_manager(tmp_path, StubLlm())))
+    assert stub.get("/models/anthropic").status_code == 503

@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+from chatbot.agent.history import NO_HISTORY
 from chatbot.agent.schedule_info import NO_SCHEDULE
 from chatbot.config import GROUP_TZ
 from chatbot.models import Event, RedactedText
@@ -25,8 +26,9 @@ class Command(BaseModel):
     start: str
     end: str
     question: str
+    end_date: str = ""  # only when the change runs into a later date's shift; "" means the same shift date
 
-    @field_validator("date")
+    @field_validator("date", "end_date")
     @classmethod
     def _date(cls, v):
         if v:
@@ -43,7 +45,8 @@ class Command(BaseModel):
             return f"Ask sender: {self.question}"
         if self.action == "GetShift":
             return f"Get shift for date {self.date}"
-        details = ", ".join(x for x in (f"squad {','.join(self.squads)}" if self.squads else "", f"{self.start}-{self.end}" if self.start else "") if x)
+        ends = f"{self.start}-{self.end}" + (f" until {self.end_date}" if self.end_date else "") if self.start else ""
+        details = ", ".join(x for x in (f"squad {','.join(self.squads)}" if self.squads else "", ends) if x)
         return f"Call {self.action} on calendar for date {self.date}" + (f" ({details})" if details else "")
 
 
@@ -55,16 +58,18 @@ class Interpretation(BaseModel):
 
 
 def render_user(template: str, member: str | None, squad: str | None, sent_at: datetime, text: str,
-                dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> str:
+                dates: str = NO_DATES, schedule: str = NO_SCHEDULE, history: str = NO_HISTORY) -> str:
     """Fill a user template: when it was sent, who sent it (roster pseudonym and squad), and the text."""
     sent = sent_at.astimezone(GROUP_TZ)  # the queue round trip leaves only a fixed offset
     who = f"{member} (squad {squad})" if member else "unknown sender"
     return template.format(message_time=f"{sent.strftime('%A %Y-%m-%d %H:%M')} {sent.tzname()}", sender=who, message=text,
-                           dates=dates, schedule=schedule)
+                           dates=dates, schedule=schedule, history=history)
 
 
-def build_user_message(event: Event, prompt: Prompt, dates: str = NO_DATES, schedule: str = NO_SCHEDULE) -> RedactedText:
-    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text, dates, schedule))
+def build_user_message(event: Event, prompt: Prompt, dates: str = NO_DATES, schedule: str = NO_SCHEDULE,
+                       history: str = NO_HISTORY) -> RedactedText:
+    return RedactedText.mint(render_user(prompt.user_template, event.member, event.squad, event.sent_at, event.text,
+                                         dates, schedule, history))
 
 
 def parse(text: str) -> Interpretation:
