@@ -14,6 +14,7 @@ dependencies = [
     "pydantic>=2.8",
     "httpx>=0.27",
     "anthropic>=1.13",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -26,4 +27,4 @@ where = ["src"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-chatbot = ["replay/page.html"]
+chatbot = ["replay/page.html", "replay/outbox.html"]

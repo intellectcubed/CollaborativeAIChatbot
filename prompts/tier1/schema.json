@@ -36,6 +36,9 @@
           "end": {
             "type": "string"
           },
+          "end_date": {
+            "type": "string"
+          },
           "question": {
             "type": "string"
           }
@@ -46,6 +49,7 @@
           "date",
           "start",
           "end",
+          "end_date",
           "question"
         ],
         "additionalProperties": false

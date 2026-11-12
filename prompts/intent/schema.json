@@ -1,0 +1,83 @@
+{
+  "type": "object",
+  "properties": {
+    "is_schedule_change": {
+      "type": "boolean"
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "date_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "weekday": {
+            "type": "string",
+            "enum": [
+              "",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+              "sunday"
+            ]
+          },
+          "relative": {
+            "type": "string",
+            "enum": [
+              "",
+              "today",
+              "tonight",
+              "tomorrow",
+              "yesterday"
+            ]
+          },
+          "qualifier": {
+            "type": "string",
+            "enum": [
+              "",
+              "this",
+              "next"
+            ]
+          },
+          "month": {
+            "type": "integer"
+          },
+          "day": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekday",
+          "relative",
+          "qualifier",
+          "month",
+          "day"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "remove",
+        "add",
+        "unclear"
+      ]
+    }
+  },
+  "required": [
+    "is_schedule_change",
+    "confidence",
+    "reason",
+    "date_references",
+    "direction"
+  ],
+  "additionalProperties": false
+}

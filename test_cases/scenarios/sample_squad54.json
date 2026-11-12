@@ -1,0 +1,10 @@
+{
+  "description": "Sample: a squad 54 question and a no-crew request. Members are roster pseudonyms (Member-N); change them to match your roster.",
+  "history": [
+    {"kind": "member", "squad": "54", "speaker": "Member-2", "addressee": null, "sent_at": "2026-11-02T13:50:00-05:00", "text": "Anyone know if we are covered Wednesday night?"},
+    {"kind": "bot", "squad": "54", "speaker": "bot", "addressee": "Member-2", "sent_at": "2026-11-02T13:51:00-05:00", "text": "Wednesday night is scheduled. Let me know if that changes."}
+  ],
+  "messages": [
+    {"member": "Member-2", "sent_at": "2026-11-02T14:10:00-05:00", "text": "54 won't have a crew Wednesday night"}
+  ]
+}

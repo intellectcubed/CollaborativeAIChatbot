@@ -1,0 +1,8 @@
+# Where the agent's replies go, by where the message came from. Re-read for every message.
+# Every reply is also written to the outbox (visible in the replay tool) whichever channel delivers it.
+#
+# replay: shown in the replay tool's Replies panel
+# log:    not delivered anywhere (the outbox still records what would have been said)
+[routes]
+live = "log"      # real GroupMe messages
+replay = "replay" # messages from the replay tool

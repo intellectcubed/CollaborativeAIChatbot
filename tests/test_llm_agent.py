@@ -8,7 +8,7 @@ from chatbot.agent.worker import handle
 from chatbot.interfaces.llm import AnthropicClient, LlmRefusal, LlmTruncated, StubLlm
 from chatbot.models import Event, RedactedText
 from chatbot.tracing.store import TraceStore
-from tests.fakes import FakeLlm, cmd, reply
+from tests.fakes import NO_CREW_JSON as NO_CREW, FakeLlm, cmd, intent_reply, reply
 
 
 @pytest.fixture
@@ -40,13 +40,16 @@ def test_no_crew_renders_calendar_call_and_traces_prompt_and_response(store):
     status, st = steps(store)
     assert status == "done"
     assert st["reply"]["output"]["lines"] == ["Call NoCrew on calendar for date 2025-03-05 (squad 54, 2200-0100)"]
-    assert st["llm_tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100")
-    assert st["llm_tier1"]["input"]["model"] == "claude-haiku-5-5"
-    assert st["llm_tier1"]["output"]["cost_usd"] == 0.00015  # 1000 in x $0.10/M + 100 out x $0.50/M
+    assert st["llm:tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100\nDates the message refers to (worked out by code from its wording): not extracted\nCalendar for those dates: not looked up\nEarlier chat with this squad, for context only (the message above is not part of it):\n(none)")
+    assert st["llm:tier1"]["input"]["model"] == "claude-haiku-5-5"
+    assert st["llm:tier1"]["output"]["cost_usd"] == 0.00015  # 1000 in x $0.10/M + 100 out x $0.50/M
+    out = st["llm:tier1"]["output"]
+    assert out["input_tokens"] == 1000 and out["output_tokens"] == 100 and out["request_id"] == "req_test"
+    assert out["latency_ms"] >= 0 and out["stop_reason"] == "end_turn"
     assert st["interpret"]["output"]["confidence"] == 0.9
     assert llm.calls[0]["schema"] == interpret.load_prompt().schema
-    assert st["llm_tier1"]["input"]["prompt_version"] == interpret.load_prompt().version
-    assert st["llm_tier1"]["input"]["system"] == interpret.load_prompt().system
+    assert st["llm:tier1"]["input"]["prompt_version"] == interpret.load_prompt().version
+    assert st["llm:tier1"]["input"]["system"] == interpret.load_prompt().system
 
 
 def test_get_shift_and_clarify_and_multiple_commands(store):
@@ -79,7 +82,7 @@ def test_unusable_answer_is_final_error_not_retry(store, bad):
 def test_refusal_and_truncation_are_final_errors(store, exc):
     handle(event(), store, FakeLlm("", exc=exc))
     status, st = steps(store)
-    assert status == "error" and st["llm_tier1"]["error"] == type(exc).__name__
+    assert status == "error" and st["llm:tier1"]["error"] == type(exc).__name__
 
 
 def test_transient_failure_raises_so_the_queue_retries(store):
@@ -102,8 +105,8 @@ class FakeSdk:
 
 def test_anthropic_client_request_shape():
     sdk = FakeSdk(text='{"a": 1}')
-    r = AnthropicClient(sdk, effort="low").complete(system="S", user=RedactedText.mint("U"), schema={"type": "object"},
-                                                     model="claude-haiku-5-5", max_tokens=2048)
+    r = AnthropicClient(sdk).complete(system="S", user=RedactedText.mint("U"), schema={"type": "object"},
+                                      model="claude-haiku-5-5", max_tokens=2048, effort="low")
     call = sdk.calls[0]
     assert call["model"] == "claude-haiku-5-5" and call["max_tokens"] == 2048 and call["system"] == "S"
     assert call["messages"] == [{"role": "user", "content": "U"}]
@@ -173,3 +176,76 @@ def test_redelivery_of_a_finished_trace_is_skipped(store):
     handle(event(), store, llm)
     handle(event(), store, llm)
     assert len(llm.calls) == 1 and [s["name"] for s in store.get_trace("t1")["steps"]].count("agent_received") == 1
+
+
+INTENT = "claude-haiku-5-5"
+
+
+def names(store):
+    return [s["name"] for s in store.get_trace("t1")["steps"]]
+
+
+def test_intent_yes_continues_to_tier1_and_traces_the_verdict(store):
+    llm = FakeLlm([intent_reply(True, 0.9, "A squad cannot staff."), NO_CREW])
+    handle(event(), store, llm, intent_model=INTENT)
+    status, st = steps(store)
+    assert status == "done" and len(llm.calls) == 2
+    assert names(store) == ["agent_received", "history", "llm:intent", "intent", "llm:tier1", "interpret", "reply"]
+    out = st["intent"]["output"]
+    assert out["is_schedule_change"] is True and out["skip"] is False and out["reason"] == "A squad cannot staff."
+    assert llm.calls[0]["schema"] == interpret.load_prompt("intent").schema and llm.calls[0]["model"] == INTENT
+
+
+def test_confident_no_skips_tier1(store):
+    llm = FakeLlm([intent_reply(False, 0.97, "Thanks message.")])
+    handle(event("Thanks everyone"), store, llm, intent_model=INTENT)
+    status, st = steps(store)
+    assert status == "ignored" and len(llm.calls) == 1
+    assert names(store) == ["agent_received", "history", "llm:intent", "intent"]
+    assert st["intent"]["output"]["skip"] is True
+
+
+def test_unsure_no_still_goes_to_tier1(store):
+    llm = FakeLlm([intent_reply(False, 0.5), NO_CREW])
+    handle(event(), store, llm, intent_model=INTENT)
+    assert steps(store)[0] == "done" and len(llm.calls) == 2
+
+
+def test_intent_failure_fails_open(store):
+    llm = FakeLlm(["not json", NO_CREW])
+    handle(event(), store, llm, intent_model=INTENT)
+    status, st = steps(store)
+    assert status == "done" and len(llm.calls) == 2 and st["intent"]["error"] == "JSONDecodeError"
+
+
+def test_transient_intent_failure_is_retried_by_the_queue(store):
+    with pytest.raises(ConnectionError):
+        handle(event(), store, FakeLlm("", exc=ConnectionError()), intent_model=INTENT)
+    assert store.get_trace("t1")["status"] == "received"
+
+
+def test_intent_off_makes_no_intent_call(store):
+    llm = FakeLlm(NO_CREW)
+    handle(event(), store, llm)  # intent_model defaults to None
+    assert len(llm.calls) == 1 and "intent" not in names(store)
+
+
+def test_intent_schema_matches_the_model():
+    from chatbot.agent.intent import IntentResult
+    assert set(interpret.load_prompt("intent").schema["properties"]) == set(IntentResult.model_fields)
+
+
+def test_every_model_call_is_recorded_as_its_own_step_with_model_and_timing(store):
+    handle(event(), store, FakeLlm([intent_reply(True), NO_CREW]), model="claude-sonnet-5-5", intent_model=INTENT)
+    st = steps(store)[1]
+    assert st["llm:intent"]["input"]["model"] == INTENT and st["llm:tier1"]["input"]["model"] == "claude-sonnet-5-5"
+    assert st["llm:intent"]["input"]["prompt_version"] == interpret.load_prompt("intent").version
+    for name in ("llm:intent", "llm:tier1"):
+        o = st[name]["output"]
+        assert {"latency_ms", "input_tokens", "output_tokens", "cost_usd", "request_id", "stop_reason"} <= set(o)
+
+
+def test_a_failed_model_call_is_recorded_with_the_error_type(store):
+    handle(event(), store, FakeLlm("", exc=RuntimeError("boom")))
+    st = steps(store)[1]
+    assert st["llm:tier1"]["error"] == "RuntimeError" and st["interpret"]["error"] == "RuntimeError"

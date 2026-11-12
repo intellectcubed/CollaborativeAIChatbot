@@ -49,6 +49,8 @@ class GroupMeCallback(BaseModel):
     text: str | None = None
     system: bool = False
     attachments: list[dict] = Field(default_factory=list)
+    # Only the replay tool sends this (its live-calendar toggle). Live GroupMe messages always count as live.
+    live_calendar: bool = True
 
     @property
     def sent_at(self) -> datetime:
@@ -68,3 +70,4 @@ class Event(BaseModel):
     text: RedactedText
     pii_outcome: str
     pii_redactions: dict[str, int] = Field(default_factory=dict)
+    live_calendar: bool = True  # False: this message may only be previewed, never written to the calendar

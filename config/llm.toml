@@ -1,0 +1,30 @@
+# Which model, effort and token limit each component uses. Read for every call, so a saved change applies
+# to the next message. Validated in full on every read: a bad file stops startup, and while the agent is
+# running the last good version is kept.
+#
+# source: "anthropic" or "openrouter". effort (Anthropic only): low, medium, high or max.
+# extra (OpenRouter only): name = value pairs added to the request, as the model's documentation describes.
+# escalate: optional. Used at most once per message when the first answer is in the low-confidence band
+#           (the gate's ask_min_confidence to apply_min_confidence). Remove the table to turn it off.
+
+[components.intent]
+source = "anthropic"
+model = "claude-haiku-5-5"
+effort = "low"
+max_tokens = 1024
+
+[components.tier1]
+source = "anthropic"
+model = "claude-haiku-5-5"
+effort = "low"
+max_tokens = 2048
+
+# [components.tier1.escalate]
+# source = "anthropic"
+# model = "claude-haiku-5-5"
+# effort = "high"
+
+[budget]
+per_message_usd = 0.05  # spend allowed on one message, across all its calls
+per_day_usd = 5.00      # spend allowed in one UTC day, across all messages
+kill_switch = false     # true refuses every model call
