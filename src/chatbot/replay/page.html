@@ -56,8 +56,12 @@
   dialog .row button, .row button { width: auto; margin-right: .5rem; padding: .4rem 1rem; }
   dialog pre { white-space: pre-wrap; }
   .prompt-panel textarea { font: 12px ui-monospace, monospace; }
-  .prompt-panel .responses { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .prompt-panel .responses pre { min-height: 8rem; margin-top: .2rem; }
+  .prompt-panel .resp-tabs { display: flex; gap: .3rem; border-bottom: 2px solid #ccc; margin-top: .8rem; }
+  .prompt-panel .resp-tabs button { width: auto; margin: 0; padding: .35rem .9rem; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; background: #f4f4f4; }
+  .prompt-panel .resp-tabs button.on { background: #fff; font-weight: 700; border-color: #888; }
+  .prompt-panel .resp-pane { border: 1px solid #ccc; border-top: none; padding: .6rem; }
+  .prompt-panel .resp-pane pre { min-height: 8rem; margin: .4rem 0 0; }
+  .prompt-panel .resp-info { margin-bottom: .2rem; }
   .prompt-panel .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
   .prompt-panel .row button { width: auto; margin: .3rem 0; padding: .4rem 1rem; }
   .prompt-panel .scroll { max-height: 18rem; overflow: auto; margin-top: .4rem; }
@@ -221,14 +225,21 @@
       <div class="row"><button id="labModelApply">Use for this tab</button><button id="labModelClear">Back to configured model</button><button id="labModelHide">Hide</button></div>
       <div id="labModelStatus" class="status"></div>
     </div>
-    <div class="responses">
-      <div><label>Original response <span id="labOrigMeta" class="status"></span></label><pre id="labOriginal"></pre></div>
-      <div>
-        <div class="row" style="align-items:center"><button id="labPrev" type="button" style="width:auto" title="Previous run">&lt;</button>
-          <span id="labPage" class="status">No runs yet</span>
-          <button id="labNext" type="button" style="width:auto" title="Next run">&gt;</button></div>
-        <label>New response <span id="labStatus" class="status"></span></label><pre id="labResult"></pre>
-      </div>
+    <div class="status" id="labStatus"></div>
+    <div class="resp-tabs" role="tablist">
+      <button type="button" id="respTabOrig" role="tab" class="on" onclick="showResp('orig')">Original</button>
+      <button type="button" id="respTabNew" role="tab" onclick="showResp('new')">New</button>
+    </div>
+    <div id="respOrig" class="resp-pane" role="tabpanel">
+      <div class="resp-info status" id="labOrigMeta"></div>
+      <pre id="labOriginal"></pre>
+    </div>
+    <div id="respNew" class="resp-pane" role="tabpanel" hidden>
+      <div class="row" style="align-items:center"><button id="labPrev" type="button" style="width:auto" title="Previous run">&lt;</button>
+        <span id="labPage" class="status">No runs yet</span>
+        <button id="labNext" type="button" style="width:auto" title="Next run">&gt;</button></div>
+      <div class="resp-info status" id="labRunInfo"></div>
+      <pre id="labResult"></pre>
     </div>
   </section>
 </main>
@@ -680,7 +691,7 @@ async function loadLab(name, step) {
     : "no sample yet: send a message in this session that calls this prompt";
   labRuns = []; labPage = -1; labPager();  // a new prompt starts with no runs; leaving the tab loses them
   $("labSent").textContent = step ? "## SYSTEM\n" + step.input.system + "\n\n## USER\n" + step.input.user : "(no sample yet)";
-  $("labResult").textContent = ""; $("labStatus").textContent = ""; aiReset();
+  $("labResult").textContent = ""; $("labRunInfo").textContent = ""; aiReset(); showResp("orig");
   const out = step && step.output;  // the response the sample call got
   $("labOriginal").textContent = !step ? "(no sample)" : out ? pretty(out.response) : "(this call failed, so there was no response)";
   $("labOrigMeta").textContent = out ? `${step.input.model} · effort ${step.input.effort || "none"} · ${out.stop_reason} · ${out.input_tokens} in / ${out.output_tokens} out · $${out.cost_usd} · ${out.latency_ms} ms` : "";
@@ -760,7 +771,7 @@ function labShowRun(i) {
   labPage = i;
   const run = labRuns[i];
   $("labSystem").value = run.system; $("labUser").value = run.user_template;
-  $("labResult").textContent = run.text; $("labStatus").textContent = run.stats;
+  $("labResult").textContent = run.text; $("labRunInfo").textContent = run.stats;
   labRender(); labUpdateDirty(); labPager();
 }
 function labPager() {
@@ -771,8 +782,17 @@ function labPager() {
 }
 $("labPrev").onclick = () => labShowRun(labPage - 1);
 $("labNext").onclick = () => labShowRun(labPage + 1);
+// The bottom panel has two tabs: Original (the sample's response) and New (the runs from Send).
+function showResp(which) {
+  const isNew = which === "new";
+  $("respOrig").hidden = isNew;
+  $("respNew").hidden = !isNew;
+  $("respTabOrig").classList.toggle("on", !isNew);
+  $("respTabNew").classList.toggle("on", isNew);
+}
 $("labSend").onclick = async () => {
-  $("labSend").disabled = true; $("labStatus").textContent = "sending..."; $("labResult").textContent = "";
+  showResp("new");
+  $("labSend").disabled = true; $("labRunInfo").textContent = "sending..."; $("labResult").textContent = "";
   const sent = { system: $("labSystem").value, user_template: $("labUser").value };  // what this run used, even if edited later
   let run;
   try {
