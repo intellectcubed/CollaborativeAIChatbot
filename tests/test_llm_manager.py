@@ -28,7 +28,8 @@ def tier1_block(extra=None):
 def test_the_committed_config_loads_and_names_the_components():
     cfg = load(REPO / "config" / "llm.toml")
     assert set(cfg.components) == {"intent", "tier1"}
-    assert cfg.components["tier1"].settings.model == HAIKU and cfg.components["tier1"].escalate is None
+    assert cfg.components["tier1"].settings.model == HAIKU
+    assert cfg.components["tier1"].escalate.model == "claude-sonnet-5-5"  # the one retry for a confidence below 0.9
     assert cfg.budget.kill_switch is False and cfg.budget.per_message_usd > 0
 
 
@@ -214,8 +215,8 @@ def test_the_next_message_starts_again_from_the_configured_model(store):
     assert tier1_models == [HAIKU, "claude-sonnet-5-5", HAIKU, "claude-sonnet-5-5"]
 
 
-@pytest.mark.parametrize("confidence,escalated", [(0.95, False), (0.4, False), (0.9, False), (0.5, True)])
-def test_only_the_low_band_escalates(store, confidence, escalated):
+@pytest.mark.parametrize("confidence,escalated", [(0.95, False), (0.9, False), (0.89, True), (0.5, True), (0.4, True)])
+def test_any_scheduling_answer_below_point_nine_escalates(store, confidence, escalated):
     manager, fake = escalating(store, fake=FakeLlm([intent_reply(True, 0.9), reply(commands=[], confidence=confidence),
                                                     reply(commands=[], confidence=confidence)]))
     handle(event(), store, manager)

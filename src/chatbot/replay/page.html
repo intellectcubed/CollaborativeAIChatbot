@@ -920,7 +920,7 @@ function llmRender(cfg) {
     const c = cfg.components[name];
     if (!c) { html += `<div class="step"><b>${name}</b> not configured (its step is skipped)</div>`; continue; }
     html += `<div class="step"><b>${name}</b>${llmRow(name, c)}` +
-      `<label><input type="checkbox" data-escalate-on="${name}" ${c.escalate ? "checked" : ""} style="width:auto"> Escalate to a stronger model in the 0.5 to 0.9 confidence band (once per message)</label>` +
+      `<label><input type="checkbox" data-escalate-on="${name}" ${c.escalate ? "checked" : ""} style="width:auto"> Escalate to a stronger model when confidence is below 0.9 (once per message)</label>` +
       `<div data-escalate="${name}" ${c.escalate ? "" : "hidden"}>` +
       llmRow(name + "-esc", c.escalate || { source: "anthropic", model: "claude-sonnet-5-5", max_tokens: 2048, effort: "high" }) + `</div></div>`;
   }
