@@ -54,7 +54,7 @@ def test_a_scheduled_squad_continues_and_tier1_sees_the_calendar(store, cal):
     assert len(llm.calls) == 2 and st["schedule"]["output"]["decision"] == "continue_to_tier1"
     assert st["schedule"]["output"]["days"][0]["sender_squad_scheduled"] is True
     line = "Calendar for those dates: Wednesday 2026-11-04: squad 34 1800-0000; squad 43 1800-0600; squad 54 1800-0000 [sender's squad 34: scheduled 1800-0000]"
-    assert llm.calls[1]["user"].endswith(line)
+    assert line in llm.calls[1]["user"]
 
 
 def test_a_removing_squad_that_is_not_scheduled_is_asked_without_calling_tier1(store, cal):
@@ -100,7 +100,7 @@ def test_two_candidate_dates_are_both_shown_and_one_match_is_enough(store, cal):
 def test_no_dates_or_no_calendar_means_no_lookup(store, cal):
     llm = FakeLlm([intent_reply(True, 0.9, direction="remove"), NO_CREW])
     _, st = run(store, cal, llm)
-    assert "schedule" not in st and llm.calls[1]["user"].endswith("Calendar for those dates: not looked up")
+    assert "schedule" not in st and llm.calls[1]["user"].endswith("Calendar for those dates: not looked up\nEarlier chat with this squad, for context only (the message above is not part of it):\n(none)")
     store.start_trace("t2", "replay", "u", "x")
     llm = FakeLlm([intent_reply(True, 0.9, dates=WED, direction="remove"), NO_CREW])
     handle(event().model_copy(update={"trace_id": "t2"}), store, llm, intent_model=INTENT, calendar=None, policy=ASK)

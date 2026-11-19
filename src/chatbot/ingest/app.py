@@ -24,7 +24,7 @@ SOURCES = {"live", "replay"}
 
 def create_app(settings=None, store=None, publisher=None, roster=None, pii=None) -> FastAPI:
     settings = settings or Settings.from_env()
-    store = store or TraceStore(settings.trace_db_path)
+    store = store or TraceStore()
     roster = roster or load_roster(settings.roster_path)
     pii = pii or PiiFilter(load_allowlist(), roster.name_tokens())
     publisher = publisher or SqsPublisher(make_client(settings), settings.queue_url)
@@ -65,7 +65,9 @@ def create_app(settings=None, store=None, publisher=None, roster=None, pii=None)
             return {"status": "ignored", "trace_id": trace_id}
 
         with store.step(trace_id, "pii_filter") as s:
-            result = pii.apply(payload.text, payload.name)
+            # Every message is kept as history, so the scheduling-words check is not applied here.
+            # Whether a message needs action is decided later, by the intent check.
+            result = pii.apply(payload.text, payload.name, require_signal=False)
             s.output = {
                 "outcome": result.outcome.value,
                 "reason": result.reason,
@@ -77,6 +79,10 @@ def create_app(settings=None, store=None, publisher=None, roster=None, pii=None)
             log.info("trace=%s outcome=%s reason=%s", trace_id, result.outcome.value, result.reason)
             return {"status": result.outcome.value, "trace_id": trace_id}
 
+        if member is not None:
+            # Every member message is kept for chat history, replays included (each replay is stored as it is played).
+            store.record_message(kind="member", sent_at=payload.sent_at, squad=member.squad, speaker=member.member,
+                                 text=result.text, source=x_source, trace_id=trace_id)
         event = Event(
             trace_id=trace_id,
             source=x_source,
@@ -88,6 +94,7 @@ def create_app(settings=None, store=None, publisher=None, roster=None, pii=None)
             text=result.text,
             pii_outcome=result.outcome.value,
             pii_redactions=result.redactions,
+            live_calendar=payload.live_calendar if x_source == "replay" else True,
         )
         try:
             with store.step(trace_id, "enqueue") as s:

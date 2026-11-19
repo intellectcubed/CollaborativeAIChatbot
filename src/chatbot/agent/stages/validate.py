@@ -3,8 +3,9 @@ from datetime import date
 from chatbot.agent.pipeline import Stage
 from chatbot.agent.plan import PlannedAction, shift_hint
 from chatbot.config import load_allowlist
+from chatbot.models import RedactedText
 from chatbot.schedule import verify
-from chatbot.schedule.windows import valid_windows
+from chatbot.schedule.windows import split_span, valid_windows
 
 
 class Validate(Stage):
@@ -25,17 +26,32 @@ class Validate(Stage):
         known = load_allowlist().squads
         days = ctx.day_cache  # shared with the schedule lookup, so each day is fetched once per message
         plan: list[PlannedAction] = []
+        notes: list[str] = []  # diagnostics for the trace, e.g. how a change was split into shifts
         for command in ctx.interpretation.commands:
-            plan.extend(self._expand(command, ctx, known, days))
+            plan.extend(self._expand(command, ctx, known, days, notes))
         ctx.plan = plan
-        step.output = {"actions": [a.trace() for a in plan]}
+        step.output = {"actions": [a.trace() for a in plan], "notes": notes}
 
-    def _expand(self, c, ctx, known, days):
+    def _expand(self, c, ctx, known, days, notes):
         if c.action == "Clarify":
             return [PlannedAction("clarify", status="clarify", reason="model_question", line=f"Ask sender: {c.question}")]
         if c.action == "GetShift":
             return [PlannedAction("other", status="noop", reason="lookup_not_supported",
                                   line=f"Get shift for date {c.date} (not run: lookups are not supported yet)")]
+        if c.date and c.start and c.end:
+            try:
+                pieces = split_span(date.fromisoformat(c.date), c.start, c.end, c.end_date)
+            except ValueError:
+                line = f"Ask sender: I could not read the hours {c.start}-{c.end}" + (f" until {c.end_date}" if c.end_date else "") + ". What hours do you mean?"
+                return [PlannedAction("clarify", status="clarify", reason="unreadable_span", line=line)]
+            if len(pieces) > 1:
+                note = f"shift split into {len(pieces)}: " + " | ".join(f"{d} {s}-{e}" for d, s, e in pieces)
+                notes.append(RedactedText.mint(note))  # built from the model's output, so it is stored as redacted text
+                actions = []
+                for shift_date, start, end in pieces:
+                    piece = c.model_copy(update={"date": shift_date.isoformat(), "start": start, "end": end, "end_date": ""})
+                    actions.extend(self._expand(piece, ctx, known, days, notes))
+                return actions
         kind = "remove" if c.action == "NoCrew" else "add"
         actions = []
         for raw in c.squads or [""]:

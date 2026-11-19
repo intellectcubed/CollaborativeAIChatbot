@@ -32,6 +32,11 @@ Your task: revise the system prompt so the problem in the observation is fixed, 
 
 Rules:
 - Change as little as possible. Keep the wording, structure and rules that already work, and add or adjust only what the observation calls for.
+- When making changes to the prompt, be sure to preserve the sections and their bullets.  Minimally we will always have the below structure: 
+## Context
+## Shifts
+## Commands
+## Rules
 - Do not rename fields, change allowed values, or change the output format: the response must keep matching the schema.
 - Prefer a clear rule with a reason over a long list of examples. If you add an example, invent it (made-up squad numbers, times and wording). Never copy real chat text, names, phone numbers or anything from a real 911 call into the prompt.
 - Write for the model named above. A small model needs short, direct, unambiguous rules.

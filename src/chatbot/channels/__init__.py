@@ -28,6 +28,7 @@ class OutboundMessage:
     to_member: str | None  # roster pseudonym; the real name never leaves the roster
     kind: str  # one of KINDS
     text: RedactedText
+    squad: str | None = None  # the squad the reply is for, so chat history can group it with that squad
 
 
 @dataclass(frozen=True)

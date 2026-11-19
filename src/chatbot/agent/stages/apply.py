@@ -19,7 +19,8 @@ class Apply(Stage):
         return ctx.calendar is not None and any(a.status == "planned" for a in ctx.plan)
 
     def run(self, ctx, step):
-        live = ctx.policy.live
+        # Both the policy (with CALENDAR_ALLOW_WRITES) and this message's own live-calendar setting must allow writes.
+        live = ctx.policy.live and ctx.event.live_calendar
         applied = []
         failure = None
         for a in [a for a in ctx.plan if a.status == "planned"]:
@@ -40,7 +41,8 @@ class Apply(Stage):
         if failure is not None:
             self._roll_back(ctx, applied)
             ctx.outcome = "error"
-        step.output = {"mode": ctx.policy.effective_mode, "actions": [a.trace() for a in ctx.plan],
+        step.output = {"mode": "live" if live else "dry_run", "live_calendar": ctx.event.live_calendar,
+                       "actions": [a.trace() for a in ctx.plan],
                        "error": type(failure).__name__ if failure else None}
 
     @staticmethod

@@ -76,6 +76,14 @@ def test_dropped_message_is_not_enqueued_and_leaves_no_text(env):
     assert t["steps"][1]["output"]["text"] is None
 
 
+def test_chatter_without_schedule_words_is_stored_and_enqueued(env):
+    client, store, pub, _ = env
+    r = client.post("/webhook", json=msg(text="Never mind, we are covered after all"))
+    assert r.json()["status"] == "enqueued"
+    assert [e["text"] for e in pub.events()] == ["Never mind, we are covered after all"]
+    assert any("Never mind" in str(m) for m in store.list_messages())
+
+
 def test_bot_and_system_messages_are_ignored(env):
     client, _, pub, _ = env
     assert client.post("/webhook", json=msg(sender_type="bot")).json()["status"] == "ignored"

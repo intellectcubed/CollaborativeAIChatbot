@@ -29,7 +29,7 @@ class ScheduleLookup(Stage):
         for d in ctx.dates.dates[:MAX_DATES]:
             if d not in ctx.day_cache:
                 ctx.day_cache[d] = ctx.calendar.get_day(d)
-            days.append(DayInfo(d, ctx.day_cache[d].coverage()))
+            days.append(DayInfo(d, ctx.day_cache[d].coverage(), ctx.day_cache[d].no_crew()))
         info = ScheduleInfo(int(squad) if squad and squad.isdigit() else None, days)
         ctx.schedule = info
         remove = ctx.intent is not None and ctx.intent.direction == "remove"

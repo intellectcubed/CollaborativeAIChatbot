@@ -40,7 +40,7 @@ def test_no_crew_renders_calendar_call_and_traces_prompt_and_response(store):
     status, st = steps(store)
     assert status == "done"
     assert st["reply"]["output"]["lines"] == ["Call NoCrew on calendar for date 2025-03-05 (squad 54, 2200-0100)"]
-    assert st["llm:tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100\nDates the message refers to (worked out by code from its wording): not extracted\nCalendar for those dates: not looked up")
+    assert st["llm:tier1"]["input"]["user"].endswith("Message: 54 won't have a crew tonight 2200-0100\nDates the message refers to (worked out by code from its wording): not extracted\nCalendar for those dates: not looked up\nEarlier chat with this squad, for context only (the message above is not part of it):\n(none)")
     assert st["llm:tier1"]["input"]["model"] == "claude-haiku-5-5"
     assert st["llm:tier1"]["output"]["cost_usd"] == 0.00015  # 1000 in x $0.10/M + 100 out x $0.50/M
     out = st["llm:tier1"]["output"]
@@ -105,8 +105,8 @@ class FakeSdk:
 
 def test_anthropic_client_request_shape():
     sdk = FakeSdk(text='{"a": 1}')
-    r = AnthropicClient(sdk, effort="low").complete(system="S", user=RedactedText.mint("U"), schema={"type": "object"},
-                                                     model="claude-haiku-5-5", max_tokens=2048)
+    r = AnthropicClient(sdk).complete(system="S", user=RedactedText.mint("U"), schema={"type": "object"},
+                                      model="claude-haiku-5-5", max_tokens=2048, effort="low")
     call = sdk.calls[0]
     assert call["model"] == "claude-haiku-5-5" and call["max_tokens"] == 2048 and call["system"] == "S"
     assert call["messages"] == [{"role": "user", "content": "U"}]
@@ -190,7 +190,7 @@ def test_intent_yes_continues_to_tier1_and_traces_the_verdict(store):
     handle(event(), store, llm, intent_model=INTENT)
     status, st = steps(store)
     assert status == "done" and len(llm.calls) == 2
-    assert names(store) == ["agent_received", "llm:intent", "intent", "llm:tier1", "interpret", "reply"]
+    assert names(store) == ["agent_received", "history", "llm:intent", "intent", "llm:tier1", "interpret", "reply"]
     out = st["intent"]["output"]
     assert out["is_schedule_change"] is True and out["skip"] is False and out["reason"] == "A squad cannot staff."
     assert llm.calls[0]["schema"] == interpret.load_prompt("intent").schema and llm.calls[0]["model"] == INTENT
@@ -201,7 +201,7 @@ def test_confident_no_skips_tier1(store):
     handle(event("Thanks everyone"), store, llm, intent_model=INTENT)
     status, st = steps(store)
     assert status == "ignored" and len(llm.calls) == 1
-    assert names(store) == ["agent_received", "llm:intent", "intent"]
+    assert names(store) == ["agent_received", "history", "llm:intent", "intent"]
     assert st["intent"]["output"]["skip"] is True
 
 

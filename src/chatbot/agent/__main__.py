@@ -16,15 +16,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 
 if __name__ == "__main__":
     settings = Settings.from_env()
-    llm, model, intent_model = make_llm()
+    store = TraceStore()
+    llm = make_llm(store)
     calendar = make_calendar()
     log = logging.getLogger("agent")
-    log.info("agent started, model=%s, intent=%s, polling %s", model, intent_model or "off", settings.queue_url)
+    log.info("agent started, components=%s, polling %s", sorted(llm.config().components), settings.queue_url)
     log.info("calendar=%s, mode=%s", calendar.base_url if calendar else "off", load_policy().effective_mode)
     start_if_enabled(llm)
     # The replay page shows these; the agent's environment is not visible to it otherwise.
     status = Path(settings.trace_db_path).with_name("agent_status.json")
     status.write_text(json.dumps({"calendar_url": calendar.base_url if calendar else None,
                                   "allow_writes": os.environ.get("CALENDAR_ALLOW_WRITES") == "1"}))
-    run_forever(SqsConsumer(make_client(settings), settings.queue_url), TraceStore(settings.trace_db_path),
-                llm, model, intent_model, calendar)
+    run_forever(SqsConsumer(make_client(settings), settings.queue_url), store, llm, calendar)

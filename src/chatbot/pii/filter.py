@@ -100,14 +100,19 @@ class PiiFilter:
         t = token.lower()
         return len(t) >= 3 and t.isalpha() and t not in self.allowlist.words and t not in COMMON_WORDS
 
-    def apply(self, text: str | None, sender_name: str = "") -> FilterResult:
-        """Filter one message. Never raises."""
+    def apply(self, text: str | None, sender_name: str = "", require_signal: bool = True) -> FilterResult:
+        """Filter one message. Never raises.
+
+        require_signal=False keeps a message with no scheduling words (it is history and may lead up to a
+        schedule change); every redaction still applies. Call-detail sentences are always removed, and a
+        message that is only call details is dropped, because nothing safe is left to keep.
+        """
         try:
-            return self._apply(text, sender_name)
+            return self._apply(text, sender_name, require_signal)
         except Exception as exc:  # fail closed
             return FilterResult(Outcome.UNCERTAIN, None, f"filter_error:{type(exc).__name__}")
 
-    def _apply(self, text, sender_name):
+    def _apply(self, text, sender_name, require_signal=True):
         if not text or not text.strip():
             return FilterResult(Outcome.DROPPED, None, "empty")
         if len(text) > MAX_LENGTH:
@@ -122,8 +127,10 @@ class PiiFilter:
                 counts["call_details"] = counts.get("call_details", 0) + 1
             else:
                 kept.append(sentence)
-        if not any(SCHEDULE_SIGNAL.search(s) for s in kept):
+        if require_signal and not any(SCHEDULE_SIGNAL.search(s) for s in kept):
             return FilterResult(Outcome.DROPPED, None, "no_schedule_signal" if not counts else "call_details_no_schedule_signal", counts)
+        if not kept:
+            return FilterResult(Outcome.DROPPED, None, "only_call_details", counts)
 
         names = set(self.roster_tokens) | {t.lower() for t in re.split(r"[\s.,_-]+", sender_name) if self._name_like(t)}
         out = []

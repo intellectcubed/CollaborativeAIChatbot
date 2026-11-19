@@ -52,16 +52,23 @@ class DaySchedule(BaseModel):
         except (ValueError, IndexError):
             return None
 
-    def coverage(self) -> dict[int, list[Interval]]:
-        """Active squads and the operational-minute intervals they are scheduled for."""
+    def _spans(self, active: bool) -> dict[int, list[Interval]]:
         spans: dict[int, list[Interval]] = {}
         for shift in self.shifts:
             for seg in shift.segments:
                 s, e = interval(seg.start_time, seg.end_time)
                 for squad in seg.squads:
-                    if squad.active:
+                    if squad.active == active:
                         spans.setdefault(squad.id, []).append((s, e))
         return {squad: merge(v) for squad, v in spans.items()}
+
+    def coverage(self) -> dict[int, list[Interval]]:
+        """Active squads and the operational-minute intervals they are scheduled for."""
+        return self._spans(active=True)
+
+    def no_crew(self) -> dict[int, list[Interval]]:
+        """Squads still on the calendar but marked inactive: they have said they cannot staff those hours."""
+        return self._spans(active=False)
 
     def tango(self) -> int | None:
         return next((s.tango for s in self.shifts if s.tango is not None), None)

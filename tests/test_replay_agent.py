@@ -37,7 +37,7 @@ def test_replay_to_agent_end_to_end(stack):
 
     t = replay.get(f"/api/traces/{trace_id}").json()
     assert t["status"] == "done" and t["source"] == "replay"
-    assert [s["name"] for s in t["steps"]] == ["inbound", "pii_filter", "enqueue", "agent_received", "llm:tier1", "interpret", "reply"]
+    assert [s["name"] for s in t["steps"]] == ["inbound", "pii_filter", "enqueue", "agent_received", "history", "llm:tier1", "interpret", "reply"]
     assert t["sent_at"] == "2025-03-04T14:10:00-05:00"
     assert t["steps"][-1]["output"]["lines"] == ["Call NoCrew on calendar for date 2025-03-05 (squad 54, 2200-0100)"]
 
@@ -51,7 +51,7 @@ def test_replay_unknown_sender_and_members_list(stack):
 
 def test_replay_serves_page(stack):
     replay, *_ = stack
-    assert "Replay tool" in replay.get("/").text
+    assert "Chatbot tracing" in replay.get("/").text and "Batch" not in replay.get("/").text
 
 
 
