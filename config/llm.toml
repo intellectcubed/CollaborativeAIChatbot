@@ -4,8 +4,8 @@
 #
 # source: "anthropic" or "openrouter". effort (Anthropic only): low, medium, high or max.
 # extra (OpenRouter only): name = value pairs added to the request, as the model's documentation describes.
-# escalate: optional. Used at most once per message when the first answer is in the low-confidence band
-#           (the gate's ask_min_confidence to apply_min_confidence). Remove the table to turn it off.
+# escalate: optional. Used at most once per message when the first answer's confidence is below apply_min_confidence
+#           (0.9 in policy.toml). Remove the table to turn it off.
 
 [components.intent]
 source = "anthropic"
@@ -19,10 +19,11 @@ model = "claude-haiku-5-5"
 effort = "low"
 max_tokens = 2048
 
-# [components.tier1.escalate]
-# source = "anthropic"
-# model = "claude-haiku-5-5"
-# effort = "high"
+[components.tier1.escalate]
+source = "anthropic"
+model = "claude-sonnet-5-5"
+effort = "high"
+max_tokens = 2048
 
 [budget]
 per_message_usd = 0.05  # spend allowed on one message, across all its calls

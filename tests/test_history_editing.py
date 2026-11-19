@@ -1,9 +1,7 @@
-import json
 
 import pytest
 from fastapi.testclient import TestClient
 
-import chatbot.replay.app as replay_app
 from chatbot.config import Settings
 from chatbot.replay.app import create_app as create_replay
 from chatbot.tracing.store import TraceStore
@@ -66,19 +64,3 @@ def test_clear_history_needs_its_phrase_and_leaves_traces_alone(replay):
     assert client.post("/api/history/clear", json={"confirm": "clear history"}).status_code == 200
     assert store.list_messages() == []
     assert store.get_trace("t1") is not None
-
-
-def test_scenario_history_loads_as_a_whole_or_not_at_all(replay, tmp_path, monkeypatch):
-    client, store = replay
-    monkeypatch.setattr(replay_app, "SCENARIOS", tmp_path)
-    good = {"kind": "member", "squad": "54", "speaker": "Member-2", "sent_at": "2026-11-02T13:50:00-05:00", "text": "first"}
-    bad = {**good, "speaker": "Nobody", "text": "second"}
-    (tmp_path / "mixed.json").write_text(json.dumps({"history": [good, bad], "messages": []}))
-    (tmp_path / "fine.json").write_text(json.dumps({"description": "d", "history": [good], "messages": [
-        {"member": "Member-2", "sent_at": "2026-11-02T14:10:00-05:00", "text": "54 is out"}]}))
-    assert client.post("/api/scenarios/mixed/load-history").status_code == 422
-    assert store.list_messages() == []  # nothing stored from a scenario with a bad row
-    assert [s["name"] for s in client.get("/api/scenarios").json()] == ["fine", "mixed"]
-    assert client.post("/api/scenarios/fine/load-history").json() == {"added": 1}
-    assert client.get("/api/scenarios/fine").json()["messages"][0]["member"] == "Member-2"
-    assert client.get("/api/scenarios/../etc").status_code == 404

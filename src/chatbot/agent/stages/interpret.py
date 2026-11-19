@@ -33,6 +33,7 @@ class Interpret(Stage):
 
     @staticmethod
     def _should_escalate(ctx, interpretation) -> bool:
-        """Only for a scheduling message whose confidence is in the band the gate would ask the sender about."""
-        low = ctx.policy.ask_min_confidence <= interpretation.confidence < ctx.policy.apply_min_confidence
+        """Only for a scheduling message whose confidence is below the level the chatbot acts on (apply_min_confidence,
+        0.9). A message that is not about the schedule goes no further, so a second call would only cost money."""
+        low = interpretation.confidence < ctx.policy.apply_min_confidence
         return interpretation.is_scheduling and low and ctx.llm.has_escalation("tier1")

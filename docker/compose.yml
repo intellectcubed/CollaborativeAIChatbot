@@ -88,7 +88,6 @@ services:
       <<: *env
       AGENT_URL: http://agent:8002
       TEST_CASES_PATH: /app/test_cases/labeled_examples.csv
-      SCENARIOS_PATH: /app/test_cases/scenarios
     volumes:
       - trace-data:/data
       - ../config/roster.local.csv:/roster/roster.csv:ro
