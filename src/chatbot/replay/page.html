@@ -3,79 +3,103 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Replay tool</title>
+<title>Chatbot tracing</title>
 <style>
+  :root {
+    color-scheme: dark;
+    --bg: #1f3a5f; --panel: #2a4a75; --panel-2: #35598a; --input: #2c4d7a; --border: #4d6f9e;
+    --text: #eef4fb; --muted: #b4c6de; --accent: #7cc0ff; --accent-text: #0b1626;
+    --code-bg: #223f66; --code-text: #eef4fb; --sel: #44689a; --changed: #5a4f2c;
+    --danger: #ff8080; --warn: #ffb86b; --ok: #7ee0a0; --badge: #e5484d; --radius: 8px;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff; --panel: #fafafa; --panel-2: #f1f3f7; --input: #ffffff; --border: #cfd6e0;
+    --text: #1c2430; --muted: #556070; --accent: #2563eb; --accent-text: #ffffff;
+    --code-bg: #f4f6f9; --code-text: #1c2430; --sel: #e4ecff; --changed: #fff6e0;
+    --danger: #b00020; --warn: #8a5300; --ok: #1f7a3a; --badge: #c00; --radius: 8px;
+  }
   [hidden] { display: none !important; }  /* the label rule below would otherwise show hidden labels */
-  body { font: 14px system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 22rem 1fr; grid-template-rows: auto 1fr; height: 100vh; }
-  aside { border-right: 1px solid #ccc; padding: 1rem; overflow: auto; }
+  body { font: 14px/1.45 system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--text);
+    display: grid; grid-template-columns: 22rem 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--border); padding: 1rem; overflow: auto; }
   main { padding: 1rem; overflow: auto; }
   label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
-  select, input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem; }
-  button { margin-top: .8rem; cursor: pointer; }
+  select, input, textarea, button { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem .6rem; color: var(--text); }
+  select, input, textarea { background: var(--input); border: 1px solid var(--border); border-radius: 6px; }
+  select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { margin-top: .8rem; cursor: pointer; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+    font-weight: 600; transition: border-color .15s, background .15s; }
+  button:hover:not(:disabled) { border-color: var(--accent); background: var(--sel); }
   button:disabled { cursor: default; opacity: .5; }
   ul { list-style: none; padding: 0; margin: .5rem 0 0; }
-  li { padding: .4rem; border-bottom: 1px solid #eee; cursor: pointer; }
-  li:hover, li.sel { background: #eef; }
-  .status { color: #555; font-size: 12px; }
-  pre { background: #f6f6f6; padding: .6rem; overflow: auto; }
-  .step { border: 1px solid #ddd; border-radius: 6px; margin: .6rem 0; padding: .5rem; }
-  .err { color: #b00; }
+  li { padding: .4rem .5rem; border-bottom: 1px solid var(--border); cursor: pointer; border-radius: 6px; }
+  li:hover, li.sel { background: var(--sel); }
+  .status { color: var(--muted); font-size: 12px; }
+  pre { background: var(--code-bg); color: var(--code-text); padding: .7rem; overflow: auto; border-radius: var(--radius);
+    font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--border); }
+  .step { border: 1px solid var(--border); border-radius: var(--radius); margin: .6rem 0; padding: .6rem; background: var(--panel); }
+  .err { color: var(--danger); }
   /* What the system posted to the chat: wraps, scrolls, and always shows at least four lines of text. */
   .posted { box-sizing: border-box; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 4em; max-height: 14em; overflow-y: auto;
-            background: #f6f6f6; padding: .6rem; border-radius: 4px; margin-top: .4rem; line-height: 1.4; }
+            background: var(--code-bg); color: var(--code-text); padding: .7rem; border-radius: var(--radius); margin-top: .4rem; line-height: 1.5;
+            font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--border); }
   /* The output panel has a fixed height, so it never pushes the trace list around. */
-  .out { box-sizing: border-box; height: 13rem; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: .5rem; background: #fcfcfc; }
+  .out { box-sizing: border-box; height: 13rem; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem;
+         background: var(--code-bg); color: var(--code-text); font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; }
   .out b { display: block; margin-top: .4rem; }
-  .badge { background: #c00; color: #fff; border-radius: 4px; padding: 0 .4rem; font-size: 11px; font-weight: 600; margin-left: .3rem; }
+  .badge { background: var(--badge); color: #fff; border-radius: 999px; padding: 0 .5rem; font-size: 11px; font-weight: 600; margin-left: .3rem; }
   .badge[hidden] { display: none; }
-  button.lab { width: auto; margin: 0 0 0 .5rem; padding: .1rem .5rem; font-size: 12px; }
-  .tabs { display: flex; gap: .3rem; border-bottom: 2px solid #ccc; margin-bottom: .8rem; align-items: center; flex-wrap: wrap; }
-  .tabs button { width: auto; margin: 0; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; background: #f4f4f4; padding: .4rem .9rem; }
-  .tabs button.on { background: #fff; font-weight: 700; border-color: #888; }
+  button.lab { width: auto; margin: 0 0 0 .5rem; padding: .1rem .7rem; font-size: 12px; }
+  .tabs { display: flex; gap: .3rem; border-bottom: 2px solid var(--border); margin-bottom: .8rem; align-items: center; flex-wrap: wrap; }
+  .tabs button { width: auto; margin: 0; border-bottom: none; border-radius: 8px 8px 0 0; padding: .4rem .9rem; }
+  .tabs button.on { background: var(--bg); border-color: var(--accent); color: var(--accent); }
   .tabs .spacer { flex: 1; }
   .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .4rem 0; }
   .bar > * { width: auto; margin: 0; }
   .bar input, .bar select { width: auto; }
   .pager { display: flex; gap: .3rem; align-items: center; margin-top: .5rem; }
-  .pager button { width: auto; margin: 0; padding: .2rem .5rem; font-size: 12px; }
+  .pager button { width: auto; margin: 0; padding: .2rem .6rem; font-size: 12px; }
   table.grid { border-collapse: collapse; width: 100%; font-size: 12px; }
-  table.grid td, table.grid th { border-bottom: 1px solid #eee; padding: .25rem .4rem; text-align: left; vertical-align: top; }
+  table.grid td, table.grid th { border-bottom: 1px solid var(--border); padding: .3rem .45rem; text-align: left; vertical-align: top; }
   table.grid td.txt { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 14rem; }
-  table.grid tr.cur { background: #fff6e0; }
-  button.danger { color: #b00; border: 1px solid #b00; background: #fff; }
-  dialog { width: 96vw; height: 94vh; max-width: none; max-height: none; box-sizing: border-box; overflow: auto; padding: 1rem 1.5rem; }
+  button.danger { color: var(--danger); border: 1px solid var(--danger); background: transparent; }
+  dialog { width: 96vw; height: 94vh; max-width: none; max-height: none; box-sizing: border-box; overflow: auto; padding: 1rem 1.5rem;
+           background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; }
+  dialog::backdrop { background: rgba(3, 8, 16, .6); }
   dialog table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  dialog td, dialog th { border-bottom: 1px solid #eee; padding: .2rem .4rem; text-align: left; vertical-align: top; }
+  dialog td, dialog th { border-bottom: 1px solid var(--border); padding: .25rem .45rem; text-align: left; vertical-align: top; }
   dialog .scroll { max-height: 18rem; overflow: auto; margin-top: .4rem; }
-  dialog tr.changed { background: #fff6e0; }
-  .v-pass { color: #080; } .v-fail, .v-miss, .v-error { color: #b00; font-weight: 600; } .v-extra { color: #a60; } .v-skipped { color: #777; }
+  dialog tr.changed { background: var(--changed); }
+  .v-pass { color: var(--ok); } .v-fail, .v-miss, .v-error { color: var(--danger); font-weight: 600; } .v-extra { color: var(--warn); } .v-skipped { color: var(--muted); }
   dialog .responses { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   dialog .responses pre { min-height: 8rem; margin-top: .2rem; }
   @media (max-width: 800px) { dialog .responses { grid-template-columns: 1fr; } }
-  dialog textarea { font: 12px ui-monospace, monospace; }
+  dialog textarea { font: 12px ui-monospace, Menlo, monospace; }
   dialog .row button, .row button { width: auto; margin-right: .5rem; padding: .4rem 1rem; }
   dialog pre { white-space: pre-wrap; }
-  .prompt-panel textarea { font: 12px ui-monospace, monospace; }
-  .prompt-panel .resp-tabs { display: flex; gap: .3rem; border-bottom: 2px solid #ccc; margin-top: .8rem; }
-  .prompt-panel .resp-tabs button { width: auto; margin: 0; padding: .35rem .9rem; border: 1px solid #ccc; border-bottom: none; border-radius: 6px 6px 0 0; background: #f4f4f4; }
-  .prompt-panel .resp-tabs button.on { background: #fff; font-weight: 700; border-color: #888; }
-  .prompt-panel .resp-pane { border: 1px solid #ccc; border-top: none; padding: .6rem; }
+  .prompt-panel textarea { font: 12px ui-monospace, Menlo, monospace; }
+  .prompt-panel .resp-tabs { display: flex; gap: .3rem; border-bottom: 2px solid var(--border); margin-top: .8rem; }
+  .prompt-panel .resp-tabs button { width: auto; margin: 0; padding: .35rem .9rem; border-bottom: none; border-radius: 8px 8px 0 0; }
+  .prompt-panel .resp-tabs button.on { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+  .prompt-panel .resp-pane { border: 1px solid var(--border); border-top: none; padding: .6rem; background: var(--panel); border-radius: 0 0 var(--radius) var(--radius); }
   .prompt-panel .resp-pane pre { min-height: 8rem; margin: .4rem 0 0; }
   .prompt-panel .resp-info { margin-bottom: .2rem; }
   .prompt-panel .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
   .prompt-panel .row button { width: auto; margin: .3rem 0; padding: .4rem 1rem; }
   .prompt-panel .scroll { max-height: 18rem; overflow: auto; margin-top: .4rem; }
   .prompt-panel table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  .prompt-panel td, .prompt-panel th { border-bottom: 1px solid #eee; padding: .2rem .4rem; text-align: left; vertical-align: top; }
-  .prompt-panel tr.changed { background: #fff6e0; }
+  .prompt-panel td, .prompt-panel th { border-bottom: 1px solid var(--border); padding: .25rem .45rem; text-align: left; vertical-align: top; }
+  .prompt-panel tr.changed { background: var(--changed); }
   .prompt-panel .responses + .row { margin-top: .4rem; }
-  #banner { grid-column: 1 / -1; color: #c00; font-weight: 700; padding: .5rem 1rem; border-bottom: 2px solid #c00; }
-  .small { font-size: 12px; padding: .1rem .5rem; margin: 0; width: auto; }
+  #banner { grid-column: 1 / -1; color: var(--danger); font-weight: 700; padding: .5rem 1rem; border-bottom: 2px solid var(--danger); background: var(--panel); }
+  .small { font-size: 12px; padding: .1rem .6rem; margin: 0; width: auto; }
 </style>
 </head>
 <body>
 <div id="banner">Checking agent settings...</div>
 <aside>
+  <h2 style="margin:0 0 .6rem;font-size:20px">Chatbot tracing</h2>
   <label style="font-weight:600"><input id="liveCal" type="checkbox" checked style="width:auto"> Live calendar updates <span class="status">(off: messages are only previewed)</span></label>
   <h3 style="margin:.8rem 0 0">Post a message</h3>
   <label for="sender">From</label><select id="sender"></select>
@@ -103,10 +127,9 @@
   <nav class="tabs">
     <button type="button" data-tab="trace" class="on">Trace</button>
     <button type="button" data-tab="history">History</button>
-    <button type="button" data-tab="batch">Batch</button>
     <button type="button" data-tab="prompts">Prompts</button>
     <span class="spacer"></span>
-    <a href="/outbox" target="replies" class="status">pop out replies</a>
+    <button id="themeBtn" type="button" class="lab" title="Switch between the dark and light colours">Light theme</button>
     <button id="llmBtn" class="lab" title="Which model each component uses, and the budget">LLM settings</button>
   </nav>
 
@@ -148,32 +171,6 @@
         <span id="hStatus" class="status"></span>
       </div>
     </div>
-  </section>
-
-  <!-- Batch: a scenario's messages played through the processor, one at a time. -->
-  <section id="tab-batch" hidden>
-    <div class="bar">
-      <label style="margin:0">Scenario <select id="bScenario"></select></label>
-      <button id="bLoad" type="button" class="small">Load scenario</button>
-      <span id="bStatus" class="status"></span>
-    </div>
-    <div id="bDesc" class="status" style="margin-bottom:.4rem"></div>
-    <div class="bar">
-      <label style="margin:0">From <input id="bFrom" type="date"></label>
-      <label style="margin:0">To <input id="bTo" type="date"></label>
-      <button id="bRange" type="button" class="small">Run range</button>
-      <button id="bDay" type="button" class="small">Run one day (From)</button>
-      <button id="bAll" type="button" class="small">Play all</button>
-    </div>
-    <div class="bar">
-      <button id="bPause" type="button" class="small">Pause</button>
-      <button id="bStep" type="button" class="small">Step one</button>
-      <button id="bStop" type="button" class="small danger">Stop</button>
-      <button id="bReset" type="button" class="small">Mark all pending</button>
-      <span id="bState" class="status"></span>
-    </div>
-    <p class="status">Each message waits for its trace to finish before the next is sent. Live calendar follows the toggle at the top left.</p>
-    <table class="grid" id="bTable"></table>
   </section>
 
   <!-- Prompts: view and edit the prompt, run it, ask for help, score it. Leaving with unsaved changes asks first. -->
@@ -259,7 +256,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const TABS = ["trace", "history", "batch", "prompts"];
+const TABS = ["trace", "history", "prompts"];
 let selected = null;
 let members = [];
 let currentTrace = null;
@@ -427,7 +424,7 @@ async function loadDetail() {
   document.querySelectorAll("button.lab").forEach(b => b.onclick = () => openLab(+b.dataset.seq));
 }
 function selectionIn(el) { const s = getSelection(); return !!s && !s.isCollapsed && el.contains(s.anchorNode); }
-// Any [data-trace] link (History, Batch) opens that trace on the Trace tab.
+// Any [data-trace] link (History) opens that trace on the Trace tab.
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-trace]");
   if (!a) return;
@@ -448,7 +445,6 @@ function setTab(name) {
   for (const t of TABS) $("tab-" + t).hidden = t !== name;
   document.querySelectorAll("nav.tabs button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
   if (name === "history") loadHistory();
-  if (name === "batch") loadScenarios();
   if (name === "prompts" && (!lab || lab.name !== $("pName").value)) pickPrompt();
 }
 document.querySelectorAll("nav.tabs button[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -526,108 +522,6 @@ $("hPreviewBtn").onclick = async () => {
   catch (e) { $("hPreview").textContent = "cannot show: " + e.message; }
 };
 resetHistoryForm();
-
-// ---- batch tab: a scenario's messages, played through the processor one at a time
-let scenarioMsgs = [];          // [{member, sent_at, text, status, trace}]
-let bState = "idle";            // idle | running | paused
-let bFilter = () => true;
-const dayOf = s => s.slice(0, 10);
-async function loadScenarios() {
-  const list = await api("/api/scenarios");
-  const keep = $("bScenario").value;
-  $("bScenario").innerHTML = list.map(s => `<option value="${esc(s.name)}">${esc(s.name)} (${s.messages} messages, ${s.history} history lines)</option>`).join("");
-  if (keep) $("bScenario").value = keep;
-  if (!list.length) $("bDesc").textContent = "No scenario files in test_cases/scenarios/.";
-  else showScenarioDesc();
-}
-async function showScenarioDesc() {
-  const name = $("bScenario").value;
-  if (!name) return;
-  try { $("bDesc").textContent = (await api("/api/scenarios/" + enc(name))).description || ""; } catch (e) { $("bDesc").textContent = ""; }
-}
-$("bScenario").onchange = showScenarioDesc;
-$("bLoad").onclick = async () => {
-  if (bState === "running") { $("bStatus").textContent = "pause or stop the run first"; return; }
-  const name = $("bScenario").value;
-  if (!name) return;
-  try {
-    const added = await call(`/api/scenarios/${enc(name)}/load-history`, "POST");
-    const s = await api("/api/scenarios/" + enc(name));
-    scenarioMsgs = s.messages.map(m => ({ member: m.member, sent_at: m.sent_at, text: m.text, status: "pending", trace: null }));
-    bState = "idle";
-    $("bStatus").textContent = `added ${added.added} history lines; ${scenarioMsgs.length} messages queued`;
-    drawBatch();
-  } catch (e) { $("bStatus").textContent = "not loaded: " + e.message; }
-};
-const inRange = m => { const from = $("bFrom").value, to = $("bTo").value; const d = dayOf(m.sent_at); return (!from || d >= from) && (!to || d <= to); };
-$("bAll").onclick = () => { bFilter = () => true; runBatch(false); };
-$("bRange").onclick = () => { bFilter = inRange; runBatch(false); };
-$("bDay").onclick = () => {
-  const day = $("bFrom").value;
-  if (!day) { $("bStatus").textContent = "set From to the day to run"; return; }
-  bFilter = m => dayOf(m.sent_at) === day; runBatch(false);
-};
-$("bPause").onclick = () => {
-  if (bState === "running") { bState = "paused"; drawBatch(); }    // the message in progress finishes first
-  else if (bState === "paused") runBatch(false);
-};
-$("bStep").onclick = () => { if (!loopActive) runBatch(true); };
-$("bStop").onclick = () => { bState = "idle"; drawBatch(); };
-$("bReset").onclick = () => { if (bState !== "running") { scenarioMsgs.forEach(m => { m.status = "pending"; m.trace = null; }); drawBatch(); } };
-// One loop at a time. Pausing while a message is in flight and resuming before it finishes just sets the state
-// back to running; the loop already in progress carries on, so no second loop starts.
-let loopActive = false;
-async function runBatch(once) {
-  bState = "running"; drawBatch();
-  if (loopActive) return;
-  loopActive = true;
-  try {
-    while (bState === "running") {
-      const next = scenarioMsgs.find(m => m.status === "pending" && bFilter(m));
-      if (!next) break;
-      await sendBatchItem(next);
-      if (once) { bState = "paused"; break; }
-    }
-    if (bState === "running") bState = "idle";  // finished, or nothing left to run
-  } finally {
-    loopActive = false;
-    drawBatch();
-  }
-}
-async function sendBatchItem(m) {
-  m.status = "sending"; drawBatch();
-  const sender = members.find(x => x.member === m.member);
-  if (!sender) { m.status = "unknown member"; drawBatch(); return; }
-  try {
-    const body = { sender_id: sender.sender_id, text: m.text, sent_at: m.sent_at, live_calendar: $("liveCal").checked };
-    const r = await call("/api/send", "POST", body);
-    m.trace = r.trace_id; rememberText(r.trace_id, m.text); addSessionTrace(r.trace_id);
-    m.status = "running"; drawBatch(); loadTraces();
-    m.status = await waitForTrace(r.trace_id);
-  } catch (e) { m.status = "failed: " + e.message; }
-  drawBatch(); loadTraces();
-}
-// A message is done when its trace leaves the working statuses. Gives up after two minutes.
-async function waitForTrace(id) {
-  for (let i = 0; i < 120; i++) {
-    const t = await api("/api/traces/" + enc(id));
-    if (!WORKING.includes(t.status)) return t.status;
-    await new Promise(res => setTimeout(res, 1000));
-  }
-  return "still working after 2 minutes";
-}
-function drawBatch() {
-  const pending = scenarioMsgs.filter(m => m.status === "pending").length;
-  $("bState").textContent = `${bState} · ${pending} pending of ${scenarioMsgs.length}`;
-  $("bTable").innerHTML = `<tr><th>#</th><th>Sent at (NY)</th><th>From</th><th>Message</th><th>Status</th><th>Trace</th></tr>` +
-    scenarioMsgs.map((m, i) => {
-      const who = members.find(x => x.member === m.member);
-      const active = m.status === "sending" || m.status === "running";
-      return `<tr class="${active ? "cur" : ""}"><td>${i + 1}</td><td>${esc(m.sent_at ? nyTime(m.sent_at) : "")}</td>` +
-        `<td>${who ? esc(who.name) + " · " : ""}${esc(m.member)}</td><td class="txt">${esc(m.text)}</td>` +
-        `<td>${esc(m.status)}</td><td>${m.trace ? `<a href="#" data-trace="${esc(m.trace)}">open</a>` : ""}</td></tr>`;
-    }).join("");
-}
 
 // ---- prompts tab: a prompt is shown with the sample from the latest message of this session that called it
 let lab = null;  // {name, step (null when there is no sample yet), saved}
@@ -1043,7 +937,21 @@ $("send").onclick = async () => {
   } catch (e) { $("result").textContent = "failed: " + e.message; }
   finally { $("send").disabled = false; }
 };
-loadMembers().then(() => { loadTraces(); }); loadStatus(); loadScenarios(); drawBatch();
+// ---- colours: dark by default; the choice is remembered on this browser
+const THEME_KEY = "tracing.theme";
+function applyTheme(name) {
+  document.documentElement.dataset.theme = name === "light" ? "light" : "dark";
+  $("themeBtn").textContent = name === "light" ? "Dark theme" : "Light theme";
+}
+$("themeBtn").onclick = () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  applyTheme(next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* not remembered: fine */ }
+};
+let savedTheme = "dark";
+try { savedTheme = localStorage.getItem(THEME_KEY) || "dark"; } catch (e) { /* not remembered: fine */ }
+applyTheme(savedTheme);
+loadMembers().then(() => { loadTraces(); }); loadStatus();
 // The page refreshes every 2 seconds only while a trace is still being processed. It stops when the trace
 // reaches a final status, and it gives up after 2 minutes (a stuck trace should not poll forever).
 const WORKING = ["received", "enqueued"];

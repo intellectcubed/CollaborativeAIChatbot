@@ -89,7 +89,6 @@ def openrouter_model_ids() -> tuple[list[str], str | None]:
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             _openrouter_models.update(at=time.time(), error=f"could not load the OpenRouter list: {type(exc).__name__}")
     return _openrouter_models["ids"], _openrouter_models["error"]
-OUTBOX_PAGE = Path(__file__).with_name("outbox.html")
 
 
 class SendRequest(BaseModel):
@@ -143,7 +142,6 @@ class EvalRequest(BaseModel):
 
 
 DEFAULT_CASES = Path(os.environ.get("TEST_CASES_PATH", Path(__file__).resolve().parents[3] / "test_cases" / "labeled_examples.csv"))
-SCENARIOS = Path(os.environ.get("SCENARIOS_PATH", Path(__file__).resolve().parents[3] / "test_cases" / "scenarios"))
 HISTORY_CLEAR_PHRASE = "clear history"
 
 
@@ -358,50 +356,6 @@ def create_app(settings=None, store=None, roster=None, post=None, prompts_dir=No
             raise HTTPException(403, str(exc))
         return {"cleared": True}
 
-    # ---- scenarios: files in test_cases/scenarios, played from the Batch tab
-
-    def scenario_file(name: str) -> Path:
-        p = SCENARIOS / f"{name}.json"
-        if not re.fullmatch(r"[a-z0-9_-]+", name) or not p.is_file():
-            raise HTTPException(404, "unknown scenario")
-        return p
-
-    def read_scenario(name: str) -> dict:
-        try:
-            return json.loads(scenario_file(name).read_text(encoding="utf-8"))
-        except ValueError as exc:
-            raise HTTPException(422, f"scenario file is not valid JSON: {exc}")
-
-    @app.get("/api/scenarios")
-    def list_scenarios():
-        out = []
-        for p in sorted(SCENARIOS.glob("*.json")) if SCENARIOS.is_dir() else []:
-            try:
-                s = json.loads(p.read_text(encoding="utf-8"))
-            except ValueError:
-                s = {}
-            out.append({"name": p.stem, "description": s.get("description", ""),
-                        "history": len(s.get("history", [])), "messages": len(s.get("messages", []))})
-        return out
-
-    @app.get("/api/scenarios/{name}")
-    def get_scenario(name: str):
-        return read_scenario(name)
-
-    @app.post("/api/scenarios/{name}/load-history")
-    def load_scenario_history(name: str):
-        """Add the scenario's history rows to the chat history. Adds only: clear the history first if you want that.
-        Every row is checked before any is stored."""
-        s = read_scenario(name)
-        try:
-            rows = [HistoryIn.model_validate(h) for h in s.get("history", [])]
-        except ValueError as exc:
-            raise HTTPException(422, f"a history row is not valid: {exc}")
-        checked = [checked_message(r) for r in rows]
-        for m in checked:
-            store.record_message(source="replay", **m)
-        return {"added": len(checked)}
-
     @app.get("/api/traces")
     def traces():
         return store.list_traces(limit=50)
@@ -410,13 +364,6 @@ def create_app(settings=None, store=None, roster=None, post=None, prompts_dir=No
     def trace_outbox(trace_id: str):
         return store.get_outbox(trace_id)
 
-    @app.get("/api/outbox")
-    def outbox():
-        return store.list_outbox(limit=50)
-
-    @app.get("/outbox", response_class=HTMLResponse)
-    def outbox_page():
-        return OUTBOX_PAGE.read_text(encoding="utf-8")
 
     @app.get("/api/traces/{trace_id}")
     def trace(trace_id: str):

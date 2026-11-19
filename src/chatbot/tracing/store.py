@@ -235,10 +235,6 @@ class TraceStore:
         with self._conn() as c:
             return list(c.execute("SELECT * FROM outbox WHERE trace_id=%s ORDER BY seq", (trace_id,)).fetchall())
 
-    def list_outbox(self, limit=50):
-        with self._conn() as c:
-            return list(c.execute("SELECT * FROM outbox ORDER BY created_at DESC, seq LIMIT %s", (limit,)).fetchall())
-
     # ---- chat history: the group's messages, member and bot, kept for context
 
     def record_message(self, *, kind, sent_at, squad, speaker, text, source, trace_id=None, addressee=None) -> int:

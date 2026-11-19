@@ -51,7 +51,7 @@ def test_replay_unknown_sender_and_members_list(stack):
 
 def test_replay_serves_page(stack):
     replay, *_ = stack
-    assert "Replay tool" in replay.get("/").text
+    assert "Chatbot tracing" in replay.get("/").text and "Batch" not in replay.get("/").text
 
 
 
