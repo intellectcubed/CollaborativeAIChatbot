@@ -78,6 +78,8 @@
   dialog textarea { font: 12px ui-monospace, Menlo, monospace; }
   dialog .row button, .row button { width: auto; margin-right: .5rem; padding: .4rem 1rem; }
   dialog pre { white-space: pre-wrap; }
+  dialog.sysdlg { width: 80vw; height: 80vh; }
+  dialog.sysdlg textarea { width: 100%; height: calc(80vh - 9rem); font: 13px ui-monospace, Menlo, monospace; }
   .prompt-panel textarea { font: 12px ui-monospace, Menlo, monospace; }
   .prompt-panel .resp-tabs { display: flex; gap: .3rem; border-bottom: 2px solid var(--border); margin-top: .8rem; }
   .prompt-panel .resp-tabs button { width: auto; margin: 0; padding: .35rem .9rem; border-bottom: none; border-radius: 8px 8px 0 0; }
@@ -183,15 +185,13 @@
     <h3 id="labTitle" style="margin:.2rem 0"></h3>
     <div id="labMeta" class="status"></div>
     <details><summary>As sent in the sample trace (read-only)</summary><pre id="labSent"></pre></details>
-    <details><summary>Response schema (read-only, from the prompt's schema.json)</summary><pre id="labSchema"></pre></details>
-    <label for="labSystem">System prompt <span id="labBadge" class="badge" hidden>Modified</span></label><textarea id="labSystem" rows="10"></textarea>
-    <label for="labUser">User message template <span class="status">fields: {message_time} {sender} {message} {dates} {schedule} {history}</span></label>
-    <textarea id="labUser" rows="4"></textarea>
+    <div class="row" style="align-items:center;margin-top:.6rem"><b>System Prompt</b> <span id="labBadge" class="badge" hidden>Modified</span>
+      <button id="labShowSys" type="button" class="small">Show</button>
+      <button id="labSave" type="button" class="small" disabled title="Make the modified system prompt permanent">Save to files</button></div>
     <label>User message for the sample (what Send will use)</label><pre id="labRendered"></pre>
     <div class="row">
       <button id="labSend">Send</button><button id="labModelBtn" title="Try a different model for this tab only">Model…</button> <span id="labModelName" class="status"></span><button id="labAi" title="AI-assisted prompt refinement" aria-label="AI Assist: AI-assisted prompt refinement">✨ AI Assist</button>
       <button id="labEvalBtn" title="Score the system prompt above against the labeled examples in test_cases/">Run test cases</button>
-      <button id="labSave" disabled>Save to prompt files</button>
       <button id="labReset">Reset to saved</button>
     </div>
     <div id="labEval" class="step" hidden><b>Labeled examples</b> <span id="labEvalStatus" class="status"></span>
@@ -241,6 +241,23 @@
   </section>
 </main>
 
+<dialog id="sysDlg" class="sysdlg">
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <button id="sysRevert" type="button" title="Put back the saved system prompt">Revert</button>
+    <h3 style="margin:0">System Prompt</h3>
+    <button id="sysClose" type="button" aria-label="Close" title="Close" style="width:auto;margin:0">&#10005;</button>
+  </div>
+  <textarea id="sysText" spellcheck="false"></textarea>
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <span id="sysMsg" class="status">Changes stay in this window until Save to files is pressed. Send uses them.</span>
+    <button id="sysSave" type="button">Save</button>
+  </div>
+</dialog>
+<dialog id="sysAskDlg">
+  <h3>Unsaved changes</h3>
+  <p>Do you wish to save or lose changes?</p>
+  <div class="row"><button id="sysAskSave">Save</button><button id="sysAskLose">Lose changes</button><button id="sysAskStay">Keep editing</button></div>
+</dialog>
 <dialog id="unsavedDlg">
   <h3>Unsaved changes</h3>
   <p>You have unsaved changes to the prompt. Save them before leaving the Prompts tab?</p>
@@ -421,7 +438,7 @@ async function loadDetail() {
   const switched = selected !== drawnTrace;
   if (!switched && (html === drawnHtml || selectionIn($("detail")))) return;
   $("detail").innerHTML = html; drawnHtml = html; drawnTrace = selected;
-  document.querySelectorAll("button.lab").forEach(b => b.onclick = () => openLab(+b.dataset.seq));
+  document.querySelectorAll("button.lab[data-seq]").forEach(b => b.onclick = () => openLab(+b.dataset.seq));
 }
 function selectionIn(el) { const s = getSelection(); return !!s && !s.isCollapsed && el.contains(s.anchorNode); }
 // Any [data-trace] link (History) opens that trace on the Trace tab.
@@ -434,8 +451,10 @@ document.addEventListener("click", e => {
 
 // ---- tabs. Leaving the Prompts tab with unsaved changes asks first.
 function labDirty() {
-  return !!lab && !!lab.saved && ($("labSystem").value !== lab.saved.system || $("labUser").value !== lab.saved.user_template);
+  return !!lab && !!lab.saved && lab.sys !== lab.saved.system;
 }
+// The system prompt Send and the other buttons use in this window. It changes when the editor's Save is pressed.
+function setSys(text) { lab.sys = text; labUpdateDirty(); }
 async function showTab(name) {
   if (activeTab === "prompts" && name !== "prompts" && labDirty()) { pendingTab = name; $("unsavedDlg").showModal(); return; }
   setTab(name);
@@ -530,7 +549,7 @@ function pretty(text) { try { return JSON.stringify(JSON.parse(text), null, 2); 
 let labOverride = null;
 const labModel = () => labOverride ? labOverride.model : lab.step.input.model;
 const labOverrideBody = () => labOverride ? { source: labOverride.source, model: labOverride.model, effort: labOverride.effort || null } : null;
-const labBody = () => ({ system: $("labSystem").value, user_template: $("labUser").value, trace_id: lab.step.trace_id,
+const labBody = () => ({ system: lab.sys, user_template: lab.saved.user_template, trace_id: lab.step.trace_id,
                          model: labModel(), max_tokens: lab.step.input.max_tokens, override: labOverrideBody() });
 function labShowModel() {
   $("labModelName").textContent = labOverride
@@ -545,7 +564,7 @@ async function labRender() {
 }
 function labFill(p) {
   lab.saved = p;
-  $("labSystem").value = p.system; $("labUser").value = p.user_template; $("labSchema").textContent = JSON.stringify(p.schema, null, 2);
+  lab.sys = p.system;
   const sent = lab.step ? lab.step.input.prompt_version : null;
   $("labMeta").textContent = (lab.step ? `model ${lab.step.input.model} · max_tokens ${lab.step.input.max_tokens} · ` : "") + `saved version ${p.version}` +
     (lab.step && sent !== p.version ? ` · the sample used version ${sent}: the fields below hold the saved files` : "");
@@ -563,7 +582,7 @@ function labUpdateEnabled() {
   for (const id of ["labSend", "labEvalBtn", "labAiGo", "labModelBtn", "labAi"]) $(id).disabled = !ok;
 }
 async function labPersist() {
-  const r = await labCall(`/api/prompts/${lab.name}`, "PUT", { system: $("labSystem").value, user_template: $("labUser").value });
+  const r = await labCall(`/api/prompts/${lab.name}`, "PUT", { system: lab.sys, user_template: lab.saved.user_template });
   labFill(await api("/api/prompts/" + lab.name));
   return r;
 }
@@ -606,9 +625,6 @@ async function openLab(seq) {
   await loadLab(step.name.slice(4), step);
   showTab("prompts");
 }
-let labTimer;
-$("labUser").oninput = () => { clearTimeout(labTimer); labTimer = setTimeout(labRender, 400); labUpdateDirty(); };
-$("labSystem").oninput = labUpdateDirty;
 $("labClose").onclick = () => showTab("trace");
 
 // ---- temporary model for this tab
@@ -664,7 +680,7 @@ function labStats(r) {
 function labShowRun(i) {
   labPage = i;
   const run = labRuns[i];
-  $("labSystem").value = run.system; $("labUser").value = run.user_template;
+  lab.sys = run.system;
   $("labResult").textContent = run.text; $("labRunInfo").textContent = run.stats;
   labRender(); labUpdateDirty(); labPager();
 }
@@ -687,7 +703,7 @@ function showResp(which) {
 $("labSend").onclick = async () => {
   showResp("new");
   $("labSend").disabled = true; $("labRunInfo").textContent = "sending..."; $("labResult").textContent = "";
-  const sent = { system: $("labSystem").value, user_template: $("labUser").value };  // what this run used, even if edited later
+  const sent = { system: lab.sys, user_template: lab.saved.user_template };  // what this run used, even if edited later
   let run;
   try {
     const r = await labCall(`/api/prompts/${lab.name}/try`, "POST", labBody());
@@ -698,7 +714,7 @@ $("labSend").onclick = async () => {
   labShowRun(labRuns.length - 1);
 };
 // ---- labeled examples: score one system prompt, or compare two
-const evalBody = systems => ({ user_template: $("labUser").value, model: labModel(), max_tokens: lab.step.input.max_tokens, systems, override: labOverrideBody() });
+const evalBody = systems => ({ user_template: lab.saved.user_template, model: labModel(), max_tokens: lab.step.input.max_tokens, systems, override: labOverrideBody() });
 function summaryText(label, s) {
   const c = s.counts, extra = ["fail", "miss", "extra", "error"].filter(k => c[k]).map(k => `${c[k]} ${k === "miss" ? "missed schedule changes" : k === "extra" ? "needlessly passed on" : k}`);
   return `${label}: ${s.passed}/${s.scored} passed` + (extra.length ? ` (${extra.join(", ")})` : "") + (s.dates_scored || s.dates_none ? ` · dates right ${s.dates_ok}/${s.dates_scored} when named (${s.dates_none} named none)` : "") + ` · $${s.cost_usd}`;
@@ -727,7 +743,7 @@ async function runEval(systems, status, body) {
 }
 $("labEvalBtn").onclick = async () => {
   $("labEval").hidden = false; $("labEvalBtn").disabled = true;
-  await runEval([{ label: "this prompt", system: $("labSystem").value }], $("labEvalStatus"), $("labEvalBody"));
+  await runEval([{ label: "this prompt", system: lab.sys }], $("labEvalStatus"), $("labEvalBody"));
   labUpdateEnabled();
 };
 
@@ -745,7 +761,7 @@ $("labAiGo").onclick = async () => {
   $("labAiGo").disabled = true; $("labAiStatus").textContent = "asking..."; $("labAiResult").hidden = true;
   const latest = $("labResult").textContent.trim() ? $("labResult").textContent : $("labOriginal").textContent;  // the newest response shown
   try {
-    const r = await labCall(`/api/prompts/${lab.name}/refine`, "POST", { system: $("labSystem").value,
+    const r = await labCall(`/api/prompts/${lab.name}/refine`, "POST", { system: lab.sys,
       user: $("labRendered").textContent, response: latest, hints: $("labHints").value, model: labModel(), override: labOverrideBody(), max_tokens: Number($("labAiMax").value) || 4096 });
     if (r.error) { $("labAiStatus").textContent = "model call failed: " + r.error; return; }
     aiProposed = r.system_prompt;
@@ -755,20 +771,20 @@ $("labAiGo").onclick = async () => {
     $("labAiEvalBody").innerHTML = ""; $("labAiEvalStatus").textContent = "";
     if ($("labAiTest").checked) {
       const proposed = r.system_prompt;  // read the box now: the user may accept before the run finishes
-      await runEval([{ label: "current", system: $("labSystem").value }, { label: "suggested", system: proposed }],
+      await runEval([{ label: "current", system: lab.sys }, { label: "suggested", system: proposed }],
                     $("labAiEvalStatus"), $("labAiEvalBody"));
     }
   } catch (e) { $("labAiStatus").textContent = "failed: " + e.message; }
   finally { labUpdateEnabled(); }
 };
 $("labAiAccept").onclick = () => {
-  aiBefore = $("labSystem").value; $("labSystem").value = aiProposed; labUpdateDirty();
+  aiBefore = lab.sys; setSys(aiProposed);
   $("labAiResult").hidden = true; $("labAiUndo").hidden = false;
-  $("labAiStatus").textContent = "accepted: the system prompt above is replaced (not saved yet). Press Send to try it.";
+  $("labAiStatus").textContent = "accepted: the system prompt is replaced for this window (not saved yet). Press Send to try it.";
 };
 $("labAiReject").onclick = () => { $("labAiResult").hidden = true; $("labAiStatus").textContent = "rejected: the system prompt is unchanged"; };
 $("labAiUndo").onclick = () => {
-  $("labSystem").value = aiBefore; labUpdateDirty(); $("labAiUndo").hidden = true; $("labAiStatus").textContent = "restored the system prompt from before the suggestion";
+  setSys(aiBefore); $("labAiUndo").hidden = true; $("labAiStatus").textContent = "restored the system prompt from before the suggestion";
 };
 $("labSave").onclick = async () => {
   if (!labDirty()) return;
@@ -778,6 +794,23 @@ $("labSave").onclick = async () => {
     $("labStatus").textContent = `saved, new version ${r.version}`;
   } catch (e) { $("labStatus").textContent = "save failed: " + e.message; }
 };
+
+// ---- the system prompt editor: a larger window. Its changes are used by Send in this window only,
+// until Save to files (beside the Show button) makes them permanent.
+const sysDlg = $("sysDlg"), sysAsk = $("sysAskDlg");
+$("labShowSys").onclick = () => { $("sysText").value = lab.sys; $("sysMsg").textContent = "Changes stay in this window until Save to files is pressed. Send uses them."; sysDlg.showModal(); };
+$("sysRevert").onclick = () => { $("sysText").value = lab.saved.system; $("sysMsg").textContent = "reverted to the saved system prompt (not applied until Save)"; };
+$("sysSave").onclick = () => { setSys($("sysText").value); sysDlg.close(); $("labStatus").textContent = "kept for this window: press Save to files to make it permanent"; };
+function askBeforeClosing() {
+  if ($("sysText").value === lab.sys) { sysDlg.close(); return; }
+  sysAsk.showModal();
+}
+$("sysClose").onclick = askBeforeClosing;
+sysDlg.addEventListener("cancel", e => { e.preventDefault(); askBeforeClosing(); });
+$("sysAskSave").onclick = () => { setSys($("sysText").value); sysAsk.close(); sysDlg.close(); $("labStatus").textContent = "kept for this window: press Save to files to make it permanent"; };
+$("sysAskLose").onclick = () => { sysAsk.close(); sysDlg.close(); };
+$("sysAskStay").onclick = () => sysAsk.close();
+sysAsk.addEventListener("cancel", e => { e.preventDefault(); sysAsk.close(); });
 
 // ---- LLM settings panel: edits config/llm.toml (developer mode only)
 let llmModels = null;
